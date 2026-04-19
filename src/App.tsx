@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Calendar, 
@@ -114,6 +114,80 @@ const PREDEFINED_AVATARS = [
   "https://picsum.photos/seed/avatar8/200/200",
 ];
 
+const PLAN_HIERARCHY: Record<string, number> = {
+  'basic': 0,
+  'student': 1,
+  'pro': 2,
+  'premium': 3,
+  'enterprise': 4
+};
+
+const PlanGuard = ({ 
+  plan, 
+  userPlan, 
+  children, 
+  label, 
+  onNavigate 
+}: { 
+  plan: string, 
+  userPlan: string, 
+  children: React.ReactNode, 
+  label: string,
+  onNavigate: (tab: string) => void
+}) => {
+  const isLocked = (PLAN_HIERARCHY[userPlan] || 0) < (PLAN_HIERARCHY[plan] || 0);
+
+  if (isLocked) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6"
+      >
+        <div className="w-24 h-24 bg-[#1A1A1A] text-white rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-black/20 relative overflow-hidden group">
+          <Lock size={40} className="relative z-10" />
+          <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
+        <div>
+          <Badge className="bg-blue-50 text-blue-600 border-none px-4 py-1.5 rounded-full font-bold uppercase tracking-widest text-[10px] mb-4">
+            Premium Feature
+          </Badge>
+          <h2 className="text-4xl font-bold tracking-tighter">Plan Restricted</h2>
+          <p className="text-[#868E96] mt-4 max-w-md mx-auto leading-relaxed font-medium">
+            The <span className="text-[#1A1A1A] font-bold">{label}</span> is part of our {plan.toUpperCase()} toolkit. 
+            Elevate your productivity and unlock professional features today.
+          </p>
+        </div>
+        <div className="flex items-center gap-4 pt-4">
+          <Button 
+            onClick={() => onNavigate('settings')}
+            className="rounded-2xl h-14 px-10 bg-[#1A1A1A] text-white font-bold shadow-xl shadow-black/10 hover:scale-105 active:scale-95 transition-all"
+          >
+            View Membership Plans
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={() => onNavigate('dashboard')}
+            className="rounded-2xl h-14 px-8 border-[#E9ECEF] font-bold hover:bg-[#F8F9FA]"
+          >
+            Return Home
+          </Button>
+        </div>
+      </motion.div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
+const getZonedTime = (date: Date, tz: string) => {
+  try {
+    return new Date(date.toLocaleString('en-US', { timeZone: tz }));
+  } catch (e) {
+    return date;
+  }
+};
+
 export default function App() {
   const { 
     tasks, addTask, updateTask, deleteTask,
@@ -125,6 +199,9 @@ export default function App() {
     user, accounts, isAuthenticated, login, register, recoverAccount, verifyLogin, logout, updateProfile,
     deleteFinishedTasks, fetchEmails,
     emails, markEmailAsRead, toggleEmailRead, toggleEmailImportant, archiveEmail, deleteEmail,
+    goals, setGoals,
+    courses, setCourses,
+    billableHours, setBillableHours,
     productivityMode, setProductivityMode, getProductivityStats, resetProductivity,
     timezone, setTimezone, savedTimezones, addTimezone, removeTimezone,
     clockType, setClockType,
@@ -138,14 +215,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date());
   
-  const getZonedTime = (date: Date, tz: string) => {
-    try {
-      return new Date(date.toLocaleString('en-US', { timeZone: tz }));
-    } catch (e) {
-      return date;
-    }
-  };
-
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -178,9 +247,25 @@ export default function App() {
   const [isZoomOpen, setIsZoomOpen] = useState(false);
   const [isAvatarSelectOpen, setIsAvatarSelectOpen] = useState(false);
   const [isPlanConfirmOpen, setIsPlanConfirmOpen] = useState(false);
-  const [pendingPlan, setPendingPlan] = useState<'basic' | 'pro' | 'premium' | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<'basic' | 'student' | 'pro' | 'premium' | 'enterprise' | null>(null);
   
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  const [isTimezoneDialogOpen, setIsTimezoneDialogOpen] = useState(false);
+  const [tzStep, setTzStep] = useState<'continent' | 'zone' | 'confirm'>('continent');
+  const [selCont, setSelCont] = useState('');
+  const [selZone, setSelZone] = useState('');
+
+  const ALL_TIMEZONES = useMemo(() => Intl.supportedValuesOf('timeZone'), []);
+  const CONTINENTS = useMemo(() => Array.from(new Set(ALL_TIMEZONES.map(tz => tz.split('/')[0]))).sort(), [ALL_TIMEZONES]);
+  const PLAN_TIMEZONE_LIMITS: Record<string, number> = {
+    'basic': 2,
+    'student': 3,
+    'pro': 3,
+    'premium': 4,
+    'enterprise': 10
+  };
+
+  const tzLimit = PLAN_TIMEZONE_LIMITS[user?.plan || 'basic'] || 2;
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isEditEventOpen, setIsEditEventOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<ScheduleItem | null>(null);
@@ -1005,12 +1090,12 @@ export default function App() {
             <div className="space-y-6">
                {!isConfirmingPayment ? (
                  <>
-                  <div className="flex gap-2 p-1 bg-[#F1F3F5] rounded-3xl mb-2">
-                    {['basic', 'pro', 'premium', 'student', 'enterprise'].map((p) => (
+                  <div className="flex gap-1.5 p-1 bg-[#F1F3F5] rounded-[2rem] mb-2 overflow-x-auto no-scrollbar scroll-smooth">
+                    {['basic', 'student', 'pro', 'premium', 'enterprise'].map((p) => (
                       <button
                         key={p}
                         onClick={() => setSelectedPlanForPreview(p as any)}
-                        className={`flex-none px-6 py-3 rounded-[1.5rem] text-[10px] font-bold uppercase tracking-widest transition-all ${selectedPlanForPreview === p ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
+                        className={`flex-none px-4 py-2.5 rounded-[1.25rem] text-[9px] font-bold uppercase tracking-[0.15em] transition-all ${selectedPlanForPreview === p ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
                       >
                         {p}
                       </button>
@@ -1036,13 +1121,13 @@ export default function App() {
                       </div>
 
                       <ul className="space-y-4 mb-8">
-                        {[
+                        {(
                           selectedPlanForPreview === 'basic' ? ['Standard Tasks', 'My Day Planner', 'Basic Calendar Sync (View-only)', 'Max 3 Projects'] :
                           selectedPlanForPreview === 'pro' ? ['Everything in Basic', 'Unlimited Projects & Tags', 'Pomodoro & Focus Timer', 'Advanced Statistics', 'Priority Support', '2-Way Calendar Sync'] :
                           selectedPlanForPreview === 'premium' ? ['Everything in Pro', 'AI Smart Scheduling', 'Workflow Automation', 'Goal Tracking', 'Advanced Analytics (Heatmaps)'] :
-                          selectedPlanForPreview === 'student' ? ['The "Study Bundle"', 'Course Management', 'Grade Tracker', 'Collaboration (5 students)'] :
-                          ['The "Team Sync" Package', 'Shared Timelines', 'Billable Hours Tracker', 'Meeting Audit', 'Enterprise Support']
-                        ][0].map((f, i) => (
+                          selectedPlanForPreview === 'student' ? ['Everything in Pro', 'Academic Hub', 'Course & Grade Tracker', 'Study Collaboration', 'Basic AI Assistant'] :
+                          ['Everything in Premium', 'Shared Timelines', 'Billable Hours Tracker', 'Meeting Audit', 'Team Dashboard', 'Volume Licensing']
+                        ).map((f, i) => (
                           <li key={i} className="flex items-center gap-3 text-xs font-semibold text-[#495057]">
                             <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
                               <CheckCircle2 size={12} className="text-blue-500" />
@@ -1467,30 +1552,44 @@ export default function App() {
                 </Button>
               </div>
 
-              <nav className="flex-1 px-4 space-y-1">
+              <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
                 {[
                   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
                   { id: 'tasks', icon: CheckCircle2, label: 'Tasks & Projects' },
                   { id: 'schedule', icon: Calendar, label: 'Schedule' },
-                  { id: 'productivity', icon: BarChart3, label: 'Productivity Statistics' },
-                  { id: 'ai', icon: MessageSquare, label: 'AI Assistant' },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveTab(item.id);
-                      setIsSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${
-                      activeTab === item.id 
-                        ? 'bg-[#1A1A1A] text-white font-medium shadow-md' 
-                        : 'text-[#868E96] hover:bg-[#F8F9FA] hover:text-[#1A1A1A]'
-                    }`}
-                  >
-                    <item.icon size={18} className={activeTab === item.id ? 'text-white' : 'group-hover:text-[#1A1A1A]'} />
-                    <span className="text-sm">{item.label}</span>
-                  </button>
-                ))}
+                  { id: 'emails', icon: Mail, label: 'Email Center', plan: 'pro' },
+                  { id: 'focus', icon: Timer, label: 'Focus Timer', plan: 'pro' },
+                  { id: 'productivity', icon: BarChart3, label: 'Statistics', plan: 'pro' },
+                  { id: 'ai', icon: MessageSquare, label: 'Team AI', plan: 'premium' },
+                  { id: 'goals', icon: Target, label: 'Goal Tracking', plan: 'premium' },
+                  { id: 'academic', icon: BookOpen, label: 'Academic Hub', plan: 'student' },
+                  { id: 'teams', icon: ShieldCheck, label: 'Team Sync', plan: 'enterprise' },
+                  { id: 'settings', icon: Settings, label: 'Settings' },
+                ].filter(item => {
+                  if (!item.plan) return true;
+                  const currentPlan = user?.plan || 'basic';
+                  return (PLAN_HIERARCHY[currentPlan] || 0) >= (PLAN_HIERARCHY[item.plan] || 0);
+                }).map((item) => {
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${
+                        activeTab === item.id 
+                          ? 'bg-[#1A1A1A] text-white font-medium shadow-md' 
+                          : 'text-[#868E96] hover:bg-[#F8F9FA] hover:text-[#1A1A1A]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <item.icon size={18} className={activeTab === item.id ? 'text-white' : 'group-hover:text-[#1A1A1A]'} />
+                        <span className="text-sm">{item.label}</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </nav>
 
               <div className="p-6 mt-auto">
@@ -1532,28 +1631,43 @@ export default function App() {
           <h1 className="font-bold text-xl tracking-tight">Chronos AI</h1>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1">
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
             { id: 'tasks', icon: CheckCircle2, label: 'Tasks & Projects' },
             { id: 'schedule', icon: Calendar, label: 'Schedule' },
-            { id: 'emails', icon: Mail, label: 'Emails' },
-            { id: 'productivity', icon: BarChart3, label: 'Productivity Statistics' },
-            { id: 'ai', icon: MessageSquare, label: 'AI Assistant' },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${
-                activeTab === item.id 
-                  ? 'bg-[#1A1A1A] text-white font-medium shadow-md' 
-                  : 'text-[#868E96] hover:bg-[#F8F9FA] hover:text-[#1A1A1A]'
-              }`}
-            >
-              <item.icon size={18} className={activeTab === item.id ? 'text-white' : 'group-hover:text-[#1A1A1A]'} />
-              <span className="text-sm">{item.label}</span>
-            </button>
-          ))}
+            { id: 'emails', icon: Mail, label: 'Mail Center', plan: 'pro' },
+            { id: 'focus', icon: Timer, label: 'Focus Timer', plan: 'pro' },
+            { id: 'productivity', icon: BarChart3, label: 'Statistics', plan: 'pro' },
+            { id: 'ai', icon: MessageSquare, label: 'Team AI', plan: 'premium' },
+            { id: 'goals', icon: Target, label: 'Goal Tracking', plan: 'premium' },
+            { id: 'academic', icon: BookOpen, label: 'Academic Hub', plan: 'student' },
+            { id: 'teams', icon: ShieldCheck, label: 'Team Sync', plan: 'enterprise' },
+            { id: 'settings', icon: Settings, label: 'Settings' },
+          ].filter(item => {
+            if (!item.plan) return true;
+            const currentPlan = user?.plan || 'basic';
+            return (PLAN_HIERARCHY[currentPlan] || 0) >= (PLAN_HIERARCHY[item.plan] || 0);
+          }).map((item) => {
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                }}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${
+                  activeTab === item.id 
+                    ? 'bg-[#1A1A1A] text-white font-medium shadow-md' 
+                    : 'text-[#868E96] hover:bg-[#F8F9FA] hover:text-[#1A1A1A]'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <item.icon size={18} className={activeTab === item.id ? 'text-white' : 'group-hover:text-[#1A1A1A]'} />
+                  <span className="text-sm">{item.label}</span>
+                </div>
+              </button>
+            );
+          })}
         </nav>
 
         <div className="p-6 mt-auto space-y-4">
@@ -1850,21 +1964,21 @@ export default function App() {
                               <SelectTrigger className="rounded-2xl h-16 border-[#E9ECEF] font-bold uppercase text-xs px-6 shadow-sm hover:border-[#1A1A1A] transition-all">
                                 <SelectValue placeholder="SELECT PLAN" />
                               </SelectTrigger>
-                              <SelectContent className="rounded-2xl border-[#E9ECEF] p-2 min-w-[240px]">
-                                <SelectItem value="basic" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
+                              <SelectContent className="rounded-2xl border-[#E9ECEF] p-1.5 min-w-[260px]">
+                                <SelectItem value="basic" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
                                   BASIC PLAN — FREE
                                 </SelectItem>
-                                <SelectItem value="pro" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
-                                  PRO PLAN — $8.99/MONTH
+                                <SelectItem value="student" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                  STUDENT — $4.99 / MONTH
                                 </SelectItem>
-                                <SelectItem value="premium" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
-                                  PREMIUM PLAN — $19.99/MONTH
+                                <SelectItem value="pro" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                  PRO PLAN — $8.99 / MONTH
                                 </SelectItem>
-                                <SelectItem value="student" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
-                                  STUDENT PLAN — $4.99/MONTH
+                                <SelectItem value="premium" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                  PREMIUM — $19.99 / MONTH
                                 </SelectItem>
-                                <SelectItem value="enterprise" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
-                                  ENTERPRISE PLAN — $25.00/MONTH
+                                <SelectItem value="enterprise" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                  ENTERPRISE — $25.00 / MONTH
                                 </SelectItem>
                               </SelectContent>
                             </Select>
@@ -2052,7 +2166,7 @@ export default function App() {
                         </h4>
                         <div className="space-y-6">
                           <div className="space-y-4">
-                            <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Saved Timezones ({savedTimezones.length}/5)</Label>
+                            <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Saved Timezones ({savedTimezones.length}/{tzLimit})</Label>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {savedTimezones.map((tz) => (
                                 <div 
@@ -2087,18 +2201,13 @@ export default function App() {
                                   </div>
                                 </div>
                               ))}
-                              {savedTimezones.length < 5 && (
+                              {savedTimezones.length < tzLimit && (
                                 <button
                                   onClick={() => {
-                                    const tz = prompt("Enter timezone (e.g. UTC, Asia/Tokyo, America/New_York)");
-                                    if (tz) {
-                                      try {
-                                        Intl.DateTimeFormat(undefined, { timeZone: tz }).format();
-                                        addTimezone(tz);
-                                      } catch (e) {
-                                        toast.error("Invalid timezone format");
-                                      }
-                                    }
+                                    setTzStep('continent');
+                                    setSelCont('');
+                                    setSelZone('');
+                                    setIsTimezoneDialogOpen(true);
                                   }}
                                   className="p-4 rounded-2xl border-2 border-dashed border-[#CED4DA] text-[#ADB5BD] font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:border-blue-600 hover:text-blue-600 transition-all active:scale-[0.98]"
                                 >
@@ -2106,7 +2215,7 @@ export default function App() {
                                 </button>
                               )}
                             </div>
-                            <p className="text-[10px] text-[#868E96] font-medium italic mt-2">* Limiting to 5 timezones. Switching updates the global app clock.</p>
+                            <p className="text-[10px] text-[#868E96] font-medium italic mt-2">* Your {user?.plan || 'basic'} plan limit: {tzLimit} timezones. Switching updates the global app clock.</p>
                           </div>
 
                           <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
@@ -3298,18 +3407,20 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex flex-col items-start lg:items-end w-full sm:w-auto">
-                      <Label className="text-[10px] font-bold uppercase tracking-widest text-[#868E96] mb-1">Your Timezone</Label>
-                      <Select value={timezone} onValueChange={setTimezone}>
-                        <SelectTrigger className="w-full sm:w-[200px] rounded-xl h-10 border-[#E9ECEF] bg-white">
-                          <SelectValue placeholder="Select timezone" />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          {Intl.supportedValuesOf('timeZone').map(tz => (
-                            <SelectItem key={tz} value={tz}>{tz}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                            <Label className="text-[10px] font-bold uppercase tracking-widest text-[#868E96] mb-1">Your Timezone</Label>
+                            <button
+                              onClick={() => {
+                                setTzStep('continent');
+                                setSelCont('');
+                                setSelZone('');
+                                setIsTimezoneDialogOpen(true);
+                              }}
+                              className="w-full sm:w-[200px] flex items-center justify-between rounded-xl h-10 border border-[#E9ECEF] bg-white px-3 text-xs font-bold hover:border-[#1A1A1A] transition-all"
+                            >
+                              <span className="truncate">{timezone}</span>
+                              <ChevronRight size={14} className="text-[#ADB5BD]" />
+                            </button>
+                          </div>
                   </div>
                 </div>
 
@@ -4114,13 +4225,14 @@ export default function App() {
               )}
 
               {activeTab === 'productivity' && (
-                <motion.div
-                  key="productivity"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="space-y-10"
-                >
+                <PlanGuard plan="pro" label="Statistics & Analytics" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                  <motion.div
+                    key="productivity"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-10"
+                  >
                   {/* Summary Stats */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <Card className="border-none shadow-sm bg-white rounded-[2rem] p-8">
@@ -4233,15 +4345,17 @@ export default function App() {
                     </div>
                   </Card>
                 </motion.div>
+                </PlanGuard>
               )}
               {activeTab === 'ai' && (
-                <motion.div
-                  key="ai"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="max-w-3xl mx-auto space-y-8"
-                >
+                <PlanGuard plan="premium" label="AI Smart Scheduling" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                  <motion.div
+                    key="ai"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="max-w-3xl mx-auto space-y-8"
+                  >
                   <div className="text-center space-y-4 mb-12">
                     <div className="w-20 h-20 bg-[#1A1A1A] rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl shadow-black/20">
                       <Zap className="text-white w-10 h-10" />
@@ -4302,6 +4416,245 @@ export default function App() {
                     </form>
                   </Card>
                 </motion.div>
+                </PlanGuard>
+              )}
+
+              {activeTab === 'focus' && (
+                <PlanGuard plan="pro" label="Focus Timer" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                  <motion.div
+                    key="focus"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="max-w-4xl mx-auto space-y-10"
+                  >
+                    <div className="text-center space-y-4 mb-10">
+                      <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto shadow-xl">
+                        <Timer className="text-white" size={32} />
+                      </div>
+                      <h3 className="text-4xl font-bold tracking-tighter">Focus & Deep Work</h3>
+                      <p className="text-[#868E96] font-medium max-w-lg mx-auto">Pomodoro timer with customizable intervals and "Deep Work" ambient sounds.</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                      <div className="md:col-span-1">
+                        <FocusTimer />
+                      </div>
+                      <div className="md:col-span-1 space-y-6">
+                        <Card className="border-none shadow-sm bg-white rounded-[2rem] p-8">
+                          <h4 className="font-bold mb-4 flex items-center gap-2">
+                            <Video size={18} className="text-blue-600" />
+                            Ambient Sounds
+                          </h4>
+                          <div className="space-y-3">
+                            {['White Noise', 'Rainfall', 'Office Hubbub', 'Coffee Shop', 'Forest Birds'].map(sound => (
+                              <button key={sound} className="w-full text-left p-4 rounded-xl bg-[#F8F9FA] hover:bg-blue-50 hover:text-blue-600 transition-all font-bold text-sm flex items-center justify-between group">
+                                {sound}
+                                <Plus size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </button>
+                            ))}
+                          </div>
+                        </Card>
+                        <Card className="border-none shadow-sm bg-white rounded-[2rem] p-8">
+                          <h4 className="font-bold mb-2">Focus Mode Settings</h4>
+                          <p className="text-xs text-[#868E96] mb-6">Block distracting notifications while the timer is active.</p>
+                          <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-xl">
+                            <span className="text-sm font-bold">Hard Mode</span>
+                            <Switch />
+                          </div>
+                        </Card>
+                      </div>
+                    </div>
+                  </motion.div>
+                </PlanGuard>
+              )}
+
+              {activeTab === 'goals' && (
+                <PlanGuard plan="premium" label="Goal Tracking" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                  <motion.div
+                    key="goals"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="max-w-4xl mx-auto space-y-10"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-4xl font-bold tracking-tighter">Strategic Goals</h3>
+                        <p className="text-[#868E96] font-medium mt-1">Connect daily tasks to yearly objectives</p>
+                      </div>
+                      <Button className="rounded-2xl h-12 px-6 bg-[#1A1A1A] text-white font-bold flex items-center gap-2 shadow-lg">
+                        <Plus size={18} /> New Objective
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      {goals.length === 0 ? (
+                        <div className="md:col-span-3 p-20 text-center bg-white rounded-[3rem] border-2 border-dashed border-[#E9ECEF]">
+                          <Target size={48} className="text-[#CED4DA] mx-auto mb-6" />
+                          <h4 className="text-xl font-bold">Set your first anchor goal</h4>
+                          <p className="text-[#868E96] mt-2 max-w-xs mx-auto">Premium users can track long-term progress across multiple quarters.</p>
+                        </div>
+                      ) : (
+                        goals.map(goal => (
+                          <Card key={goal.id} className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 space-y-6">
+                            <div className="flex items-center justify-between">
+                              <Badge className="bg-purple-50 text-purple-600 border-none px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">{goal.category}</Badge>
+                              <span className="text-xs font-bold text-[#868E96]">{goal.progress}%</span>
+                            </div>
+                            <h4 className="text-xl font-bold tracking-tight">{goal.title}</h4>
+                            <div className="space-y-2">
+                              <div className="h-2 bg-[#F8F9FA] rounded-full overflow-hidden">
+                                <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${goal.progress}%` }}
+                                  className="h-full bg-purple-600 rounded-full"
+                                />
+                              </div>
+                              <p className="text-[10px] text-[#868E96] font-medium">Target: {format(new Date(goal.targetDate), 'MMM yyyy')}</p>
+                            </div>
+                          </Card>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                </PlanGuard>
+              )}
+
+              {activeTab === 'academic' && (
+                <PlanGuard plan="student" label="Academic Hub" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                  <motion.div
+                    key="academic"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="max-w-4xl mx-auto space-y-10"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-4xl font-bold tracking-tighter">The Study Bundle</h3>
+                        <p className="text-[#868E96] font-medium mt-1">Semesters, grades, and shared sessions</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Button variant="outline" className="rounded-2xl h-12 px-6 font-bold flex items-center gap-2">
+                          <UserPlus size={18} /> Shared Session
+                        </Button>
+                        <Button className="rounded-2xl h-12 px-6 bg-[#1A1A1A] text-white font-bold flex items-center gap-2">
+                          <Plus size={18} /> Add Course
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10 space-y-8">
+                        <h4 className="text-xl font-bold flex items-center gap-3">
+                          <BookOpen size={20} className="text-blue-600" />
+                          Current Enrollment
+                        </h4>
+                        <div className="space-y-4">
+                          {courses.length === 0 ? (
+                            <p className="text-sm text-[#868E96] italic">No active courses. Add one to start tracking GPA.</p>
+                          ) : (
+                            courses.map(course => (
+                              <div key={course.id} className="flex items-center justify-between p-5 bg-[#F8F9FA] rounded-3xl border border-transparent hover:border-black/5 transition-all group">
+                                <div>
+                                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">{course.code}</p>
+                                  <p className="font-bold text-lg">{course.name}</p>
+                                  <p className="text-xs text-[#868E96] font-medium">{course.credits} Credits</p>
+                                </div>
+                                <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-[#E9ECEF]">
+                                  <span className="font-black text-xl">{course.grade}</span>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </Card>
+
+                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
+                        <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
+                          <Star size={20} className="text-orange-500" />
+                          GPA Tracker
+                        </h4>
+                        <div className="text-center py-6 space-y-4">
+                          <p className="text-6xl font-black tracking-tight">3.85</p>
+                          <p className="text-sm font-bold text-[#868E96] uppercase tracking-widest">Cumulative Average</p>
+                          <div className="pt-6">
+                            <Button variant="outline" className="w-full rounded-2xl h-12 font-bold border-[#E9ECEF]">
+                              Analyze Grade Impacts
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  </motion.div>
+                </PlanGuard>
+              )}
+
+              {activeTab === 'teams' && (
+                <PlanGuard plan="enterprise" label="Team Sync" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                  <motion.div
+                    key="teams"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="max-w-4xl mx-auto space-y-10"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-4xl font-bold tracking-tighter">Enterprise Control</h3>
+                        <p className="text-[#868E96] font-medium mt-1">Manage team availability and billable logs</p>
+                      </div>
+                      <Button className="rounded-2xl h-12 px-6 bg-[#1A1A1A] text-white font-bold flex items-center gap-2 shadow-lg">
+                        <Upload size={18} /> Export Invoices
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                       <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 col-span-1 lg:col-span-2 space-y-8">
+                        <h4 className="text-xl font-bold flex items-center gap-3">
+                          <BarChart3 size={20} className="text-blue-600" />
+                          Billable Hours History
+                        </h4>
+                        <div className="space-y-4">
+                          {billableHours.length === 0 ? (
+                            <div className="text-center py-10">
+                              <p className="text-sm text-[#868E96] italic">No billable sessions tracked this period.</p>
+                            </div>
+                          ) : (
+                            billableHours.map(log => (
+                              <div key={log.id} className="flex items-center justify-between p-5 bg-[#F8F9FA] rounded-3xl">
+                                <div className="flex items-center gap-4">
+                                  <div className={`w-3 h-3 rounded-full ${log.isBilled ? 'bg-green-500' : 'bg-orange-500'}`} />
+                                  <div>
+                                    <p className="font-bold">{log.projectName}</p>
+                                    <p className="text-xs text-[#868E96] font-medium">{format(new Date(log.date), 'MMM d, yyyy')}</p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-black text-lg">{log.hours}h</p>
+                                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">${(log.hours * log.rate).toFixed(2)} Total</p>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </Card>
+
+                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 space-y-6 flex flex-col items-center justify-center text-center">
+                        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner">
+                          <Clock size={32} />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-xl">Meeting Audit</h4>
+                          <p className="text-xs text-[#868E96] mt-2">Team time spent in meetings this week:</p>
+                        </div>
+                        <p className="text-5xl font-black mb-2 tracking-tight">24.5h</p>
+                        <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest">Approx. Cost: $3,200</p>
+                      </Card>
+                    </div>
+                  </motion.div>
+                </PlanGuard>
               )}
             </AnimatePresence>
           </div>
@@ -4309,7 +4662,94 @@ export default function App() {
       </main>
         </div>
       )}
-      {/* Profile Picture Zoom Dialog */}
+      {/* Timezone Selection Dialog */}
+      <Dialog open={isTimezoneDialogOpen} onOpenChange={setIsTimezoneDialogOpen}>
+        <DialogContent className="max-w-md rounded-[2.5rem] p-8">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold tracking-tight uppercase">
+              {tzStep === 'continent' ? 'Select Continent' : tzStep === 'zone' ? 'Select City/Zone' : 'Confirm Selection'}
+            </DialogTitle>
+            <DialogDescription>
+              {tzStep === 'continent' ? 'Browse timezones by region' : tzStep === 'zone' ? `Showing locations in ${selCont}` : 'Review current time in selected zone'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-6 space-y-6">
+            {tzStep === 'continent' && (
+              <div className="grid grid-cols-2 gap-3">
+                {CONTINENTS.map(cont => (
+                  <Button 
+                    key={cont}
+                    variant="outline"
+                    onClick={() => {
+                      setSelCont(cont);
+                      setTzStep('zone');
+                    }}
+                    className="h-14 rounded-2xl font-bold border-[#E9ECEF] hover:border-blue-600 hover:bg-blue-50 transition-all"
+                  >
+                    {cont}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {tzStep === 'zone' && (
+              <div className="space-y-4">
+                 <Select value={selZone} onValueChange={(val) => {
+                   setSelZone(val);
+                   setTzStep('confirm');
+                 }}>
+                  <SelectTrigger className="h-14 rounded-2xl border-[#E9ECEF] font-bold">
+                    <SelectValue placeholder="Search location..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px] rounded-2xl">
+                    {ALL_TIMEZONES.filter(tz => tz.startsWith(selCont)).map(tz => (
+                      <SelectItem key={tz} value={tz} className="py-3 font-medium">
+                        {tz.split('/').slice(1).join(' — ').replace(/_/g, ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                 </Select>
+                 <Button variant="ghost" className="w-full rounded-xl" onClick={() => setTzStep('continent')}>
+                   Back to continents
+                 </Button>
+              </div>
+            )}
+
+            {tzStep === 'confirm' && (
+              <div className="space-y-6">
+                <div className="p-8 bg-blue-50/50 rounded-[2rem] border border-blue-100 text-center">
+                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-2">Current time in {selZone.split('/').pop()?.replace(/_/g, ' ')}</p>
+                  <p className="text-5xl font-black tracking-tighter mb-2">
+                    {format(getZonedTime(currentTime, selZone), 'hh:mm a')}
+                  </p>
+                  <p className="text-xs font-bold text-[#868E96]">
+                    {format(getZonedTime(currentTime, selZone), 'EEEE, MMMM do')}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <Button 
+                    className="h-14 bg-[#1A1A1A] text-white rounded-2xl font-bold"
+                    onClick={() => {
+                      if (!savedTimezones.includes(selZone)) {
+                        addTimezone(selZone);
+                      }
+                      setTimezone(selZone);
+                      setIsTimezoneDialogOpen(false);
+                      toast.success(`Active timezone updated to ${selZone.split('/').pop()?.replace(/_/g, ' ')}`);
+                    }}
+                  >
+                    Confirm & Apply
+                  </Button>
+                  <Button variant="ghost" className="rounded-xl" onClick={() => setTzStep('zone')}>
+                    Choose different location
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={isZoomOpen} onOpenChange={setIsZoomOpen}>
         <DialogContent className="max-w-2xl p-0 overflow-hidden bg-transparent border-none shadow-none" showCloseButton={false}>
           <div className="relative aspect-square w-full">
@@ -4411,12 +4851,12 @@ export default function App() {
           <div className="py-6 space-y-6">
             <div className="p-4 bg-[#F8F9FA] rounded-2xl border border-[#E9ECEF]">
               <p className="text-sm font-bold uppercase tracking-widest text-[#868E96] mb-2">Selected Plan</p>
-              <p className="text-xl font-bold uppercase">
-                {pendingPlan} PLAN — {
+              <p className="text-xl font-bold uppercase tracking-tight">
+                {pendingPlan} — {
                   pendingPlan === 'basic' ? 'FREE' : 
-                  pendingPlan === 'pro' ? '$8.99/MONTH' : 
-                  pendingPlan === 'premium' ? '$19.99/MONTH' : 
-                  pendingPlan === 'student' ? '$4.99/MONTH' : '$25.00/MONTH'
+                  pendingPlan === 'pro' ? '$8.99 / MONTH' : 
+                  pendingPlan === 'premium' ? '$19.99 / MONTH' : 
+                  pendingPlan === 'student' ? '$4.99 / MONTH' : '$25.00 / MONTH'
                 }
               </p>
             </div>
@@ -4424,13 +4864,13 @@ export default function App() {
             <div className="space-y-4">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#868E96] px-2">Plan Features</p>
               <ul className="space-y-3 bg-[#F8F9FA]/50 p-4 rounded-2xl border border-[#F1F3F5]">
-                {[
+                {(
                   pendingPlan === 'basic' ? ['Standard Tasks', 'My Day Planner', 'Basic Calendar Sync (View-only)', 'Max 3 Projects'] :
                   pendingPlan === 'pro' ? ['Everything in Basic', 'Unlimited Projects & Tags', 'Pomodoro & Focus Timer', 'Advanced Statistics', 'Priority Support', '2-Way Calendar Sync'] :
                   pendingPlan === 'premium' ? ['Everything in Pro', 'AI Smart Scheduling', 'Workflow Automation', 'Goal Tracking', 'Advanced Analytics (Heatmaps)'] :
-                  pendingPlan === 'student' ? ['The "Study Bundle"', 'Course Management', 'Grade Tracker', 'Collaboration (5 students)'] :
-                  ['The "Team Sync" Package', 'Shared Timelines', 'Billable Hours Tracker', 'Meeting Audit', 'Enterprise Support']
-                ][0].map((f, i) => (
+                  pendingPlan === 'student' ? ['Everything in Pro', 'Academic Hub', 'Course & Grade Tracker', 'Study Collaboration', 'Basic AI Assistant'] :
+                  ['Everything in Premium', 'Shared Timelines', 'Billable Hours Tracker', 'Meeting Audit', 'Team Dashboard', 'Volume Licensing']
+                ).map((f, i) => (
                   <li key={i} className="flex items-center gap-3 text-xs font-semibold text-[#495057]">
                     <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
                       <CheckCircle2 size={12} className="text-blue-500" />

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { startOfToday, isAfter } from 'date-fns';
 import { toast } from 'sonner';
-import { Task, ScheduleItem, Reminder, TimeUsageLog, TaskStatus, Email, TimerStep } from '../types';
+import { Task, ScheduleItem, Reminder, TimeUsageLog, TaskStatus, Email, TimerStep, Goal, Course, BillableHour } from '../types';
 
 export function useChronosStoreInternal() {
   const [user, setUser] = useState<{ 
@@ -97,6 +97,24 @@ export function useChronosStoreInternal() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [goals, setGoals] = useState<Goal[]>(() => {
+    if (!user) return [];
+    const saved = localStorage.getItem(`chronos_${user.email}_goals`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [courses, setCourses] = useState<Course[]>(() => {
+    if (!user) return [];
+    const saved = localStorage.getItem(`chronos_${user.email}_courses`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [billableHours, setBillableHours] = useState<BillableHour[]>(() => {
+    if (!user) return [];
+    const saved = localStorage.getItem(`chronos_${user.email}_billable`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [draftTask, setDraftTask] = useState<Partial<Task>>(() => {
     if (!user) return {};
     const saved = localStorage.getItem(`chronos_${user.email}_draft_task`);
@@ -117,6 +135,9 @@ export function useChronosStoreInternal() {
       const uReminders = localStorage.getItem(`chronos_${user.email}_reminders`);
       const uLogs = localStorage.getItem(`chronos_${user.email}_logs`);
       const uEmails = localStorage.getItem(`chronos_${user.email}_emails`);
+      const uGoals = localStorage.getItem(`chronos_${user.email}_goals`);
+      const uCourses = localStorage.getItem(`chronos_${user.email}_courses`);
+      const uBillable = localStorage.getItem(`chronos_${user.email}_billable`);
       const uDraftTask = localStorage.getItem(`chronos_${user.email}_draft_task`);
       const uDraftEvent = localStorage.getItem(`chronos_${user.email}_draft_event`);
 
@@ -126,6 +147,9 @@ export function useChronosStoreInternal() {
       setLogs(uLogs ? JSON.parse(uLogs) : []);
       setDraftTask(uDraftTask ? JSON.parse(uDraftTask) : {});
       setDraftEvent(uDraftEvent ? JSON.parse(uDraftEvent) : {});
+      setGoals(uGoals ? JSON.parse(uGoals) : []);
+      setCourses(uCourses ? JSON.parse(uCourses) : []);
+      setBillableHours(uBillable ? JSON.parse(uBillable) : []);
 
       if (uEmails) {
         setEmails(JSON.parse(uEmails));
@@ -141,6 +165,9 @@ export function useChronosStoreInternal() {
       setEmails([]);
       setDraftTask({});
       setDraftEvent({});
+      setGoals([]);
+      setCourses([]);
+      setBillableHours([]);
     }
   }, [user?.email]);
 
@@ -173,6 +200,24 @@ export function useChronosStoreInternal() {
       localStorage.setItem(`chronos_${user.email}_emails`, JSON.stringify(emails));
     }
   }, [emails, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_goals`, JSON.stringify(goals));
+    }
+  }, [goals, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_courses`, JSON.stringify(courses));
+    }
+  }, [courses, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_billable`, JSON.stringify(billableHours));
+    }
+  }, [billableHours, user?.email]);
 
   useEffect(() => {
     if (user) {
@@ -951,6 +996,9 @@ export function useChronosStoreInternal() {
     schedule, addScheduleItem, updateScheduleItem, deleteScheduleItem,
     reminders, addReminder, deleteReminder,
     emails, markEmailAsRead, toggleEmailRead, toggleEmailImportant, archiveEmail, deleteEmail,
+    goals, setGoals,
+    courses, setCourses,
+    billableHours, setBillableHours,
     logs, addLog,
     draftTask, setDraftTask,
     draftEvent, setDraftEvent,

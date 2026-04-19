@@ -90,3 +90,29 @@ export interface TimerStep {
   duration: number; // in minutes
   label?: string;
 }
+
+export interface Goal {
+  id: string;
+  title: string;
+  targetDate: string;
+  progress: number; // 0-100
+  category: string;
+}
+
+export interface Course {
+  id: string;
+  name: string;
+  code: string;
+  grade: string;
+  credits: number;
+}
+
+export interface BillableHour {
+  id: string;
+  projectId: string;
+  projectName: string;
+  hours: number;
+  rate: number;
+  date: string;
+  isBilled: boolean;
+}
