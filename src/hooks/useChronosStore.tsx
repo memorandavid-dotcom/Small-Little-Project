@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { startOfToday, isAfter } from 'date-fns';
 import { toast } from 'sonner';
-import { Task, ScheduleItem, Reminder, TimeUsageLog, TaskStatus, Email } from '../types';
+import { Task, ScheduleItem, Reminder, TimeUsageLog, TaskStatus, Email, TimerStep } from '../types';
 
 export function useChronosStoreInternal() {
   const [tasks, setTasks] = useState<Task[]>(() => {
@@ -396,6 +396,26 @@ export function useChronosStoreInternal() {
     return { success: false, message: 'Invalid code. Use your recovery code.' };
   };
 
+  const startPlan = (plan: TimerStep[]) => {
+    if (plan.length === 0) return;
+    setTimerPlan(plan);
+    const firstStep = plan[0];
+    setCurrentPlanStepIndex(0);
+    setTimerMode(firstStep.type);
+    setTimeLeft(firstStep.duration * 60);
+    setIsTimerActive(true);
+    setIsTrackingEnabled(true);
+    toast.success("Focus Plan Started!");
+  };
+
+  const cancelPlan = () => {
+    setCurrentPlanStepIndex(-1);
+    setTimerPlan([]);
+    setIsTimerActive(false);
+    setIsTrackingEnabled(false);
+    toast.info("Focus Plan Cancelled");
+  };
+
   const deleteFinishedTasks = () => {
     setTasks(prev => prev.filter(t => t.status !== TaskStatus.COMPLETED));
   };
@@ -477,6 +497,14 @@ export function useChronosStoreInternal() {
   const [workSubject, setWorkSubject] = useState(() => localStorage.getItem('chronos_work_subject') || '');
   const [workActivity, setWorkActivity] = useState(() => localStorage.getItem('chronos_work_activity') || '');
   const [workDetails, setWorkDetails] = useState(() => localStorage.getItem('chronos_work_details') || '');
+  const [timerPlan, setTimerPlan] = useState<TimerStep[]>(() => {
+    const saved = localStorage.getItem('chronos_timer_plan');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [currentPlanStepIndex, setCurrentPlanStepIndex] = useState<number>(() => {
+    const saved = localStorage.getItem('chronos_plan_index');
+    return saved ? parseInt(saved) : -1;
+  });
   
   const [overdueNotificationsEnabled, setOverdueNotificationsEnabled] = useState(() => localStorage.getItem('chronos_overdue_notify') !== 'false');
   const [headerText, setHeaderText] = useState(() => localStorage.getItem('chronos_header_text') || 'Focus on what matters');
@@ -533,6 +561,14 @@ export function useChronosStoreInternal() {
     localStorage.setItem('chronos_header_text', headerText);
   }, [headerText]);
 
+  useEffect(() => {
+    localStorage.setItem('chronos_timer_plan', JSON.stringify(timerPlan));
+  }, [timerPlan]);
+
+  useEffect(() => {
+    localStorage.setItem('chronos_plan_index', currentPlanStepIndex.toString());
+  }, [currentPlanStepIndex]);
+
   // Overdue Check Logic
   useEffect(() => {
     const interval = setInterval(() => {
@@ -580,9 +616,6 @@ export function useChronosStoreInternal() {
         }
       }, 1000);
     } else if (timeLeft === 0) {
-      setIsTimerActive(false);
-      setIsTrackingEnabled(false);
-      
       const sessionType = timerMode === 'work' ? 'Focus' : timerMode === 'review' ? 'Review' : 'Break';
       
       if (timerMode !== 'break') {
@@ -601,13 +634,37 @@ export function useChronosStoreInternal() {
         toast.success(`${sessionType} session complete!`);
       }
 
-      toast.error(`${sessionType} finished!`, {
-        description: timerMode === 'break' ? "Back to work!" : "Time to take a short break.",
-      });
+      // Handle Plan Progression
+      if (currentPlanStepIndex !== -1 && currentPlanStepIndex < timerPlan.length - 1) {
+        const nextIndex = currentPlanStepIndex + 1;
+        const nextStep = timerPlan[nextIndex];
+        
+        setCurrentPlanStepIndex(nextIndex);
+        setTimerMode(nextStep.type);
+        setTimeLeft(nextStep.duration * 60);
+        setIsTimerActive(true);
+        setIsTrackingEnabled(true);
+        
+        toast.info(`Plan advanced: ${nextStep.type.toUpperCase()}`, {
+          description: nextStep.label || `Starting ${nextStep.duration} minute ${nextStep.type}`
+        });
+      } else {
+        setIsTimerActive(false);
+        setIsTrackingEnabled(false);
+        if (currentPlanStepIndex !== -1) {
+          setCurrentPlanStepIndex(-1);
+          setTimerPlan([]);
+          toast.success("Focus Plan Completed!");
+        } else {
+          toast.error(`${sessionType} finished!`, {
+            description: timerMode === 'break' ? "Back to work!" : "Time to take a short break.",
+          });
+        }
+      }
       clearInterval(interval);
     }
     return () => clearInterval(interval);
-  }, [isTimerActive, isTrackingEnabled, timeLeft, timerMode, workTime, reviewWorkTime, activeTaskId, reviewSubject, reviewFocus]);
+  }, [isTimerActive, isTrackingEnabled, timeLeft, timerMode, workTime, reviewWorkTime, activeTaskId, reviewSubject, reviewFocus, timerPlan, currentPlanStepIndex, tasks, addLog, workSubject, workActivity, workDetails]);
 
   useEffect(() => {
     localStorage.setItem('chronos_prod_mode', productivityMode);
@@ -688,7 +745,8 @@ export function useChronosStoreInternal() {
     workDetails, setWorkDetails,
     overdueNotificationsEnabled, setOverdueNotificationsEnabled,
     headerText, setHeaderText,
-    changePassword, toggle2SV, verify2SV
+    changePassword, toggle2SV, verify2SV,
+    timerPlan, setTimerPlan, currentPlanStepIndex, setCurrentPlanStepIndex, startPlan, cancelPlan
   };
 }
 

@@ -83,3 +83,10 @@ export interface Email {
   isArchived: boolean;
   avatar?: string;
 }
+
+export interface TimerStep {
+  id: string;
+  type: 'work' | 'break' | 'review';
+  duration: number; // in minutes
+  label?: string;
+}
