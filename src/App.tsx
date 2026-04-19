@@ -120,32 +120,51 @@ export default function App() {
     schedule, addScheduleItem, updateScheduleItem, deleteScheduleItem,
     reminders, addReminder, deleteReminder,
     logs, addLog,
-    user, accounts, isAuthenticated, login, register, verifyLogin, logout, updateProfile,
-    deleteFinishedTasks, fetchEmails,
-    emails, markEmailAsRead, toggleEmailRead, toggleEmailImportant, archiveEmail, deleteEmail,
     draftTask, setDraftTask,
     draftEvent, setDraftEvent,
+    user, accounts, isAuthenticated, login, register, recoverAccount, verifyLogin, logout, updateProfile,
+    deleteFinishedTasks, fetchEmails,
+    emails, markEmailAsRead, toggleEmailRead, toggleEmailImportant, archiveEmail, deleteEmail,
     productivityMode, setProductivityMode, getProductivityStats, resetProductivity,
-    timezone, setTimezone,
+    timezone, setTimezone, savedTimezones, addTimezone, removeTimezone,
     clockType, setClockType,
     timeFormat, setTimeFormat,
     productiveSeconds, reviewSeconds,
     overdueNotificationsEnabled, setOverdueNotificationsEnabled,
-    changePassword, toggle2SV, verify2SV
+    changePassword, toggle2SV, verify2SV,
+    sendOTP, verifyOTPAndResetPassword, verifyEmail, setInitialPassword, removeAccount, updateUserPlan
   } = useChronosStore();
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date());
   
+  const getZonedTime = (date: Date, tz: string) => {
+    try {
+      return new Date(date.toLocaleString('en-US', { timeZone: tz }));
+    } catch (e) {
+      return date;
+    }
+  };
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Mini Calendar State
   const [taskViewMode, setTaskViewMode] = useState<'all' | 'daily' | 'weekly' | 'monthly'>('daily');
   const [scheduleViewMode, setScheduleViewMode] = useState<'day' | 'week'>('day');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    if (isAuthenticated) {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({ top: 0 });
+      }
+      window.scrollTo({ top: 0 });
+    }
+  }, [isAuthenticated, activeTab]);
+
   const [aiInput, setAiInput] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
@@ -167,12 +186,19 @@ export default function App() {
   const [editingEvent, setEditingEvent] = useState<ScheduleItem | null>(null);
   const [isEditTaskOpen, setIsEditTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [loginView, setLoginView] = useState<'select' | 'create'>('select');
+  const [loginView, setLoginView] = useState<'select' | 'create_choice' | 'create_new' | 'recover' | 'plan_selection'>('select');
+  const [accountToDelete, setAccountToDelete] = useState<{ email: string; name: string } | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [userPendingPlan, setUserPendingPlan] = useState<any>(null);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedAccountForLogin, setSelectedAccountForLogin] = useState<{ email: string; name: string; avatar: string } | null>(null);
+  
+  const [selectedPlanForPreview, setSelectedPlanForPreview] = useState<'basic' | 'pro' | 'premium'>('basic');
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
@@ -195,6 +221,21 @@ export default function App() {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [is2SVSetupOpen, setIs2SVSetupOpen] = useState(false);
   
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetOTP, setResetOTP] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetStep, setResetStep] = useState<'input_email' | 'input_otp' | 'input_new_password'>('input_email');
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+  
+  const [verificationOTP, setVerificationOTP] = useState('');
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+  const [onVerificationSuccess, setOnVerificationSuccess] = useState<(() => void) | null>(null);
+  const [isPasswordSetupMode, setIsPasswordSetupMode] = useState(false);
+  const [setupPassword, setSetupPassword] = useState('');
+  const [confirmSetupPassword, setConfirmSetupPassword] = useState('');
+  const [isRecoveryConfirmOpen, setIsRecoveryConfirmOpen] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+
   const handleScroll = () => {
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
@@ -412,6 +453,14 @@ export default function App() {
   const handleVerifyAndLogin = () => {
     if (!selectedAccountForLogin) return;
     
+    // Check if account has a password
+    const account = accounts.find(acc => acc.email === selectedAccountForLogin.email);
+    if (account && !account.password) {
+      toast.info("Your account doesn't have a password. Please set one.");
+      setIsPasswordSetupMode(true);
+      return;
+    }
+    
     const result = verifyLogin(selectedAccountForLogin.email, loginPassword);
     if (result.success) {
       if ((result as any).requires2SV) {
@@ -419,15 +468,70 @@ export default function App() {
         toast.info("Two-Step Verification Required");
         return;
       }
-      const account = accounts.find(acc => acc.email === selectedAccountForLogin.email);
       if (account) {
-        login(account as any);
-        toast.success(`Welcome back, ${account.name}!`);
+        if (!account.plan) {
+          setUserPendingPlan(account);
+          setLoginView('plan_selection');
+          setShow2SVInput(false);
+          setLoginPassword('');
+        } else {
+          login(account as any);
+          toast.success(`Welcome back, ${account.name}!`);
+          setActiveTab('dashboard');
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'instant' });
+          }
+          window.scrollTo({ top: 0, behavior: 'instant' });
+        }
       }
     } else {
+      // Logic for attempts and lockout is handled in verifyLogin but we can format the message
       toast.error(result.message || "Failed to login");
     }
     setLoginPassword('');
+  };
+
+  const handleForgotPassword = () => {
+    // Skip OTP as requested
+    setResetStep('input_new_password');
+  };
+
+  const handleVerifyOTP = () => {
+    // This might not be needed if we skip OTP
+    setResetStep('input_new_password');
+  };
+
+  const handleResetPassword = () => {
+    const res = verifyOTPAndResetPassword(resetEmail, 'SKIP_OTP', resetNewPassword);
+    if (res.success) {
+      setIsForgotPasswordOpen(false);
+      setResetStep('input_email');
+      setResetEmail('');
+      setResetOTP('');
+      setResetNewPassword('');
+    } else {
+      toast.error(res.message || "Failed to reset password");
+    }
+  };
+
+  const handleSendVerificationEmail = (email: string, onSuccess: () => void) => {
+    // Skip OTP as requested, just verify immediately
+    const res = verifyEmail(email, 'SKIP_OTP'); 
+    if (res.success) {
+      onSuccess();
+    }
+  };
+
+  const handleConfirmVerification = () => {
+    if (!user) return;
+    const res = verifyEmail(user.email, 'SKIP_OTP');
+    if (res.success) {
+      setIsVerificationModalOpen(false);
+      setVerificationOTP('');
+      if (onVerificationSuccess) onVerificationSuccess();
+    } else {
+      toast.error(res.message || "Verification failed");
+    }
   };
 
   const handleVerify2SV = () => {
@@ -436,79 +540,322 @@ export default function App() {
     if (result.success) {
       const account = accounts.find(acc => acc.email === selectedAccountForLogin.email);
       if (account) {
-        login(account as any);
-        toast.success(`Welcome back, ${account.name}!`);
-        setShow2SVInput(false);
-        setSvCode('');
+        if (!account.plan) {
+          setUserPendingPlan(account);
+          setLoginView('plan_selection');
+          setShow2SVInput(false);
+          setSvCode('');
+        } else {
+          login(account as any);
+          toast.success(`Welcome back, ${account.name}!`);
+          setShow2SVInput(false);
+          setSvCode('');
+          setActiveTab('dashboard');
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'instant' });
+          }
+          window.scrollTo({ top: 0, behavior: 'instant' });
+        }
       }
     } else {
       toast.error(result.message || "Invalid 2SV code");
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center p-6">
+  const loginContent = !isAuthenticated && (
+    <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center p-6 bg-[radial-gradient(circle_at_top_right,rgba(0,0,0,0.03),transparent),radial-gradient(circle_at_bottom_left,rgba(0,0,0,0.02),transparent)]">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-white rounded-[3rem] p-10 shadow-2xl shadow-black/5"
+          className="max-w-md w-full bg-white rounded-[3.5rem] p-10 shadow-2xl shadow-black/[0.03] border border-white"
         >
           <div className="text-center mb-10">
-            <div className="w-16 h-16 bg-[#1A1A1A] rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-xl">
+            <div className="w-16 h-16 bg-[#1A1A1A] rounded-[1.8rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-black/20">
               <Clock className="text-white" size={32} />
             </div>
             <h1 className="text-3xl font-bold tracking-tighter mb-2">Chronos AI</h1>
-            <p className="text-[#868E96] font-medium">
+            <p className="text-[#868E96] font-medium px-4">
               {loginView === 'select' 
                 ? (selectedAccountForLogin ? `Verify ${selectedAccountForLogin.name}` : 'Welcome back! Choose an account') 
-                : 'Create your new workspace'}
+                : loginView === 'create_choice' ? 'How would you like to start?'
+                : loginView === 'create_new' ? 'Create your new workspace'
+                : loginView === 'recover' ? 'Recover your workspace'
+                : loginView === 'plan_selection' ? 'Select your membership plan'
+                : 'Account Limit Reached'}
             </p>
           </div>
 
-          {loginView === 'select' ? (
+          {/* Account Limit View */}
+          {loginView === 'create_choice' && accounts.length >= 3 && (
+            <div className="space-y-6">
+              <div className="bg-red-50 p-6 rounded-[2rem] border border-red-100/50">
+                <div className="flex items-center gap-3 text-red-600 mb-3">
+                  <AlertCircle size={20} />
+                  <p className="font-bold text-sm tracking-tight">Account Limit Reached</p>
+                </div>
+                <p className="text-xs text-red-600/80 leading-relaxed font-medium">
+                  To create or recover a new account, you must first remove one of your existing local profiles.
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                <p className="text-[10px] text-[#ADB5BD] font-bold uppercase tracking-widest px-2">Choose an account to remove</p>
+                {accounts.map(acc => (
+                  <div key={acc.email} className="flex items-center gap-4 p-4 rounded-2xl bg-[#F8F9FA] border border-transparent hover:border-red-200 transition-all group">
+                    <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm shrink-0">
+                      <img src={acc.avatar} alt={acc.name} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm truncate">{acc.name}</p>
+                      <p className="text-xs text-[#868E96] truncate">{acc.email}</p>
+                    </div>
+                    <Button 
+                      onClick={() => {
+                        setAccountToDelete({ email: acc.email, name: acc.name });
+                        setIsDeleteConfirmOpen(true);
+                      }}
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-red-500 hover:bg-red-50 rounded-xl"
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <Button 
+                variant="ghost" 
+                onClick={() => setLoginView('select')}
+                className="w-full rounded-2xl h-12 font-bold text-[#868E96] hover:text-[#1A1A1A]"
+              >
+                <ArrowLeft size={16} className="mr-2" />
+                Back to Login
+              </Button>
+            </div>
+          )}
+
+          {/* Create Choice View */}
+          {loginView === 'create_choice' && accounts.length < 3 && (
+             <div className="space-y-4">
+              <button 
+                onClick={() => setLoginView('create_new')}
+                className="w-full p-6 text-left border-2 border-[#E9ECEF] rounded-[2rem] hover:border-[#1A1A1A] hover:bg-black/5 transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-[#F1F3F5] rounded-2xl flex items-center justify-center group-hover:bg-[#1A1A1A] transition-colors">
+                    <UserPlus size={20} className="text-[#495057] group-hover:text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">New Account</h3>
+                    <p className="text-sm text-[#868E96]">Start fresh with a new workspace</p>
+                  </div>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => setLoginView('recover')}
+                className="w-full p-6 text-left border-2 border-[#E9ECEF] rounded-[2rem] hover:border-[#1A1A1A] hover:bg-black/5 transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-[#F1F3F5] rounded-2xl flex items-center justify-center group-hover:bg-[#1A1A1A] transition-colors">
+                    <ShieldCheck size={20} className="text-[#495057] group-hover:text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">Recover Account</h3>
+                    <p className="text-sm text-[#868E96]">Already have an account elsewhere?</p>
+                  </div>
+                </div>
+              </button>
+
+              <div className="pt-4">
+                <Button 
+                  variant="ghost" 
+                  onClick={() => setLoginView('select')}
+                  className="w-full rounded-2xl h-12 font-bold text-[#868E96] hover:text-[#1A1A1A]"
+                >
+                  <ArrowLeft size={16} className="mr-2" />
+                  Back to Login
+                </Button>
+              </div>
+             </div>
+          )}
+
+          {/* New Account Form */}
+          {loginView === 'create_new' && (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Full Name</Label>
+                <Input 
+                  placeholder="John Doe" 
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="rounded-2xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Email Address</Label>
+                <Input 
+                  type="email" 
+                  placeholder="john@example.com" 
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  className="rounded-2xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Password</Label>
+                <Input 
+                  type="password"
+                  placeholder="Create a password" 
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="rounded-2xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
+                />
+              </div>
+              
+              <div className="pt-4 space-y-3">
+                <Button 
+                  disabled={!newName || !newEmail || !newPassword}
+                  onClick={() => {
+                    const result = register({
+                      name: newName,
+                      email: newEmail,
+                      password: newPassword,
+                      avatar: `https://picsum.photos/seed/${newEmail}/200/200`
+                    });
+                    if (result.success) {
+                      toast.success("Account created successfully! Please log in.");
+                      setNewName('');
+                      setNewEmail('');
+                      setNewPassword('');
+                      setLoginView('select');
+                    } else if (result.existsRemotely) {
+                      setRecoveryEmail(newEmail);
+                      setIsRecoveryConfirmOpen(true);
+                    }
+                  }}
+                  className="w-full bg-[#1A1A1A] text-white rounded-2xl h-14 font-bold shadow-xl hover:translate-y-[-2px] transition-all disabled:opacity-50 disabled:translate-y-0"
+                >
+                  Create Account
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => setLoginView('create_choice')}
+                  className="w-full rounded-2xl h-12 font-bold text-[#868E96] hover:text-[#1A1A1A]"
+                >
+                  <ArrowLeft size={16} className="mr-2" />
+                  Back
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Recover View */}
+          {loginView === 'recover' && (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Restore Email</Label>
+                <Input 
+                  type="email" 
+                  placeholder="your@email.com" 
+                  value={recoveryEmail}
+                  onChange={(e) => setRecoveryEmail(e.target.value)}
+                  className="rounded-2xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
+                />
+              </div>
+              <p className="text-xs text-[#868E96] leading-relaxed">
+                Enter the email associated with your remote account. If found, it will be added to this device.
+              </p>
+              
+              <div className="pt-4 space-y-3">
+                <Button 
+                  onClick={() => {
+                    const found = recoverAccount(recoveryEmail);
+                    if (found) {
+                      setLoginView('select');
+                      setRecoveryEmail('');
+                    } else {
+                      toast.error("Account not found in remote database.");
+                    }
+                  }}
+                  className="w-full bg-[#1A1A1A] text-white rounded-2xl h-14 font-bold shadow-xl hover:translate-y-[-2px] transition-all"
+                >
+                  Find Account
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => setLoginView('create_choice')}
+                  className="w-full rounded-2xl h-12 font-bold text-[#868E96] hover:text-[#1A1A1A]"
+                >
+                  <ArrowLeft size={16} className="mr-2" />
+                  Back
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Standard Login / Account Selection */}
+          {loginView === 'select' && (
             <div className="space-y-4">
               {!selectedAccountForLogin ? (
                 <>
                   {accounts.length > 0 ? (
-                    <div className="space-y-3 mb-8">
-                      <p className="text-[10px] text-[#ADB5BD] font-bold uppercase tracking-widest px-2">Saved Accounts</p>
-                      {accounts.map((acc) => {
-                        const isLocked = acc.lockoutUntil && new Date(acc.lockoutUntil) > new Date();
-                        return (
-                          <button
-                            key={acc.email}
-                            disabled={isLocked}
-                            onClick={() => setSelectedAccountForLogin(acc)}
-                            className={`w-full flex items-center gap-4 p-4 rounded-2xl border border-[#E9ECEF] hover:border-[#1A1A1A] transition-all group ${isLocked ? 'opacity-50 grayscale' : 'hover:bg-[#F8F9FA]'}`}
-                          >
-                            <div className="w-12 h-12 rounded-xl overflow-hidden shadow-sm">
-                              <img src={acc.avatar} alt={acc.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <div className="space-y-3 mb-8">
+                        <p className="text-[10px] text-[#ADB5BD] font-bold uppercase tracking-widest px-2">Saved Accounts</p>
+                        {accounts.map((acc) => {
+                          const isLocked = acc.lockoutUntil && new Date(acc.lockoutUntil) > new Date();
+                          return (
+                            <div
+                              key={acc.email}
+                              className={`w-full flex items-center gap-4 p-4 rounded-2xl border border-[#E9ECEF] transition-all group relative overflow-hidden ${isLocked ? 'opacity-60 grayscale' : 'hover:bg-[#F8F9FA] hover:border-[#1A1A1A]'}`}
+                            >
+                              <div 
+                                className={`flex flex-1 items-center gap-4 min-w-0 ${isLocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                onClick={() => !isLocked && setSelectedAccountForLogin(acc)}
+                              >
+                                <div className="w-12 h-12 rounded-xl overflow-hidden shadow-sm shrink-0">
+                                  <img src={acc.avatar} alt={acc.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                </div>
+                                <div className="text-left flex-1 min-w-0">
+                                  <p className="font-bold text-sm truncate">{acc.name}</p>
+                                  <p className="text-xs text-[#868E96] truncate">{acc.email}</p>
+                                  {isLocked && (
+                                    <p className="text-[10px] text-red-500 font-bold mt-1 uppercase flex items-center gap-1">
+                                      <Lock size={10} /> Locked
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 z-10">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setAccountToDelete({ email: acc.email, name: acc.name });
+                                      setIsDeleteConfirmOpen(true);
+                                    }}
+                                    className="w-10 h-10 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-50 opacity-100 transition-opacity"
+                                  >
+                                    <Trash2 size={16} />
+                                  </Button>
+                                {!isLocked && <ChevronRight size={16} className="text-[#CED4DA] group-hover:text-[#1A1A1A]" />}
+                              </div>
                             </div>
-                            <div className="text-left flex-1">
-                              <p className="font-bold text-sm group-hover:text-[#1A1A1A]">{acc.name}</p>
-                              <p className="text-xs text-[#868E96]">{acc.email}</p>
-                              {isLocked && (
-                                <p className="text-[10px] text-red-500 font-bold mt-1 uppercase flex items-center gap-1">
-                                  <Lock size={10} /> Account Locked
-                                </p>
-                              )}
-                            </div>
-                            {!isLocked && <ChevronRight size={16} className="text-[#CED4DA] group-hover:text-[#1A1A1A]" />}
-                          </button>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
                   ) : (
-                    <div className="text-center py-6 px-4 bg-[#F8F9FA] rounded-[2rem] mb-8">
-                      <p className="text-sm text-[#868E96]">No accounts found on this device.</p>
+                    <div className="text-center py-6 px-4 bg-[#F8F9FA] rounded-[2rem] mb-8 border border-[#E9ECEF]">
+                      <p className="text-sm text-[#868E96] font-medium">No accounts on this device.</p>
                     </div>
                   )}
 
                   <Button 
-                    onClick={() => setLoginView('create')}
+                    onClick={() => setLoginView('create_choice')}
                     variant="outline"
-                    className="w-full rounded-2xl h-14 font-bold flex items-center justify-center gap-2 border-[#E9ECEF] hover:bg-[#F8F9FA]"
+                    className="w-full rounded-2xl h-14 font-bold flex items-center justify-center gap-2 border-[#E9ECEF] hover:bg-[#F8F9FA] hover:border-[#1A1A1A] transition-all"
                   >
                     <UserPlus size={18} />
                     Create New Account
@@ -516,7 +863,8 @@ export default function App() {
                 </>
               ) : (
                 <div className="space-y-6">
-                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-[#F8F9FA] mb-6">
+                  {/* Account detail card */}
+                  <div className="flex items-center gap-4 p-4 rounded-2xl bg-[#F8F9FA] border border-[#E9ECEF]">
                     <div className="w-12 h-12 rounded-xl overflow-hidden shadow-sm">
                       <img src={selectedAccountForLogin.avatar} alt={selectedAccountForLogin.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     </div>
@@ -534,56 +882,105 @@ export default function App() {
 
                   {!show2SVInput ? (
                     <>
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Enter Password</Label>
-                        <Input 
-                          type="password"
-                          placeholder="••••••••" 
-                          value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleVerifyAndLogin()}
-                          className="rounded-xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
-                          autoFocus
-                        />
-                      </div>
+                      {isPasswordSetupMode ? (
+                        <div className="space-y-4">
+                          <p className="text-xs text-[#868E96] font-medium leading-relaxed">
+                            Securing your data. Please create a password for this workspace.
+                          </p>
+                          <div className="space-y-4">
+                            <Input 
+                              type="password"
+                              value={setupPassword}
+                              onChange={(e) => setSetupPassword(e.target.value)}
+                              placeholder="New Password"
+                              className="rounded-2xl h-12 border-[#E9ECEF]"
+                            />
+                            <Input 
+                              type="password"
+                              value={confirmSetupPassword}
+                              onChange={(e) => setConfirmSetupPassword(e.target.value)}
+                              placeholder="Confirm Password"
+                              className="rounded-2xl h-12 border-[#E9ECEF]"
+                            />
+                          </div>
+                          <Button 
+                            onClick={() => {
+                              if (setupPassword !== confirmSetupPassword) {
+                                toast.error("Passwords do not match");
+                                return;
+                              }
+                              setInitialPassword(selectedAccountForLogin.email, setupPassword);
+                              setIsPasswordSetupMode(false);
+                            }}
+                            className="w-full bg-[#1A1A1A] text-white rounded-2xl h-14 font-bold"
+                          >
+                            Set & Secure
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center px-1">
+                              <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Password</Label>
+                              <button 
+                                onClick={() => {
+                                  setResetEmail(selectedAccountForLogin.email);
+                                  setIsForgotPasswordOpen(true);
+                                }}
+                                className="text-[10px] font-bold text-blue-600 uppercase"
+                              >
+                                Forgot?
+                              </button>
+                            </div>
+                            <Input 
+                              type="password"
+                              placeholder="••••••••" 
+                              value={loginPassword}
+                              onChange={(e) => setLoginPassword(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleVerifyAndLogin()}
+                              className="rounded-2xl h-12 border-[#E9ECEF] focus:ring-1 focus:ring-black" 
+                              autoFocus
+                            />
+                          </div>
 
-                      <div className="pt-4 space-y-3">
-                        <Button 
-                          onClick={handleVerifyAndLogin}
-                          className="w-full bg-[#1A1A1A] text-white rounded-2xl h-14 font-bold shadow-xl hover:translate-y-[-2px] transition-all"
-                        >
-                          Verify Password
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          onClick={() => setSelectedAccountForLogin(null)}
-                          className="w-full rounded-2xl h-12 font-bold text-[#868E96] hover:text-[#1A1A1A]"
-                        >
-                          Use Different Account
-                        </Button>
-                      </div>
+                          <div className="pt-2 space-y-3">
+                            <Button 
+                              onClick={handleVerifyAndLogin}
+                              className="w-full bg-[#1A1A1A] text-white rounded-2xl h-14 font-bold shadow-xl shadow-black/10 transition-all active:scale-[0.98]"
+                            >
+                              Login to Workspace
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              onClick={() => setSelectedAccountForLogin(null)}
+                              className="w-full rounded-2xl h-12 font-bold text-[#868E96] transition-colors"
+                            >
+                              Choose Different
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </>
                   ) : (
-                    <>
+                    <div className="space-y-6">
                       <div className="space-y-2">
                         <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Security Code (2SV)</Label>
                         <Input 
-                          placeholder="Enter recovery code" 
+                          placeholder="Recovery code" 
                           value={svCode}
                           onChange={(e) => setSvCode(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleVerify2SV()}
-                          className="rounded-xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
+                          className="rounded-2xl h-12 border-[#E9ECEF]" 
                           autoFocus
                         />
-                        <p className="text-[10px] text-[#868E96] font-medium px-1">Enter your 2SV recovery code to proceed</p>
                       </div>
 
-                      <div className="pt-4 space-y-3">
+                      <div className="pt-2 space-y-3">
                         <Button 
                           onClick={handleVerify2SV}
-                          className="w-full bg-[#1A1A1A] text-white rounded-2xl h-14 font-bold shadow-xl hover:translate-y-[-2px] transition-all"
+                          className="w-full bg-[#1A1A1A] text-white rounded-2xl h-14 font-bold shadow-xl shadow-black/10 transition-all"
                         >
-                          Check Code & Login
+                          Verify & Enter
                         </Button>
                         <Button 
                           variant="ghost" 
@@ -591,84 +988,224 @@ export default function App() {
                             setShow2SVInput(false);
                             setSvCode('');
                           }}
-                          className="w-full rounded-2xl h-12 font-bold text-[#868E96] hover:text-[#1A1A1A]"
+                          className="w-full rounded-2xl h-12 font-bold text-[#868E96]"
                         >
-                          Back to Password
+                          Back
                         </Button>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               )}
             </div>
-          ) : (
+          )}
+
+          {/* Plan Selection View */}
+          {loginView === 'plan_selection' && userPendingPlan && (
             <div className="space-y-6">
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Full Name</Label>
-                <Input 
-                  placeholder="John Doe" 
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="rounded-xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Email Address</Label>
-                <Input 
-                  type="email" 
-                  placeholder="john@example.com" 
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  className="rounded-xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Password</Label>
-                <Input 
-                  type="password"
-                  placeholder="Create a password" 
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="rounded-xl h-12 border-[#E9ECEF] focus:ring-[#1A1A1A]" 
-                />
-              </div>
-              
-              <div className="pt-4 space-y-3">
-                <Button 
-                  disabled={!newName || !newEmail || !newPassword}
-                  onClick={() => {
-                    const success = register({
-                      name: newName,
-                      email: newEmail,
-                      password: newPassword,
-                      avatar: `https://picsum.photos/seed/${newEmail}/200/200`
-                    });
-                    if (success) {
-                      toast.success("Account created successfully!");
-                      setNewName('');
-                      setNewEmail('');
-                      setNewPassword('');
-                    }
-                  }}
-                  className="w-full bg-[#1A1A1A] text-white rounded-2xl h-14 font-bold shadow-xl hover:translate-y-[-2px] transition-all disabled:opacity-50 disabled:translate-y-0"
-                >
-                  Create Account
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  onClick={() => setLoginView('select')}
-                  className="w-full rounded-2xl h-12 font-bold text-[#868E96] hover:text-[#1A1A1A]"
-                >
-                  <ArrowLeft size={16} className="mr-2" />
-                  Back to Selection
-                </Button>
-              </div>
+               {!isConfirmingPayment ? (
+                 <>
+                  <div className="flex gap-2 p-1 bg-[#F1F3F5] rounded-3xl mb-2">
+                    {['basic', 'pro', 'premium', 'student', 'enterprise'].map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setSelectedPlanForPreview(p as any)}
+                        className={`flex-none px-6 py-3 rounded-[1.5rem] text-[10px] font-bold uppercase tracking-widest transition-all ${selectedPlanForPreview === p ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="bg-[#F8F9FA] rounded-[2.5rem] p-8 border border-[#E9ECEF] relative overflow-hidden">
+                    <div className="relative z-10">
+                      <div className="flex justify-between items-start mb-6">
+                        <div>
+                          <h3 className="text-2xl font-bold tracking-tight mb-1">{selectedPlanForPreview.charAt(0).toUpperCase() + selectedPlanForPreview.slice(1)}</h3>
+                          <p className="text-xs text-[#868E96] font-medium">Membership plan</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold">
+                            {selectedPlanForPreview === 'basic' ? 'Free' : 
+                             selectedPlanForPreview === 'pro' ? '$8.99' : 
+                             selectedPlanForPreview === 'premium' ? '$19.99' : 
+                             selectedPlanForPreview === 'student' ? '$4.99' : '$25'}
+                          </p>
+                          <p className="text-[10px] text-[#ADB5BD] font-bold uppercase tracking-widest">per month</p>
+                        </div>
+                      </div>
+
+                      <ul className="space-y-4 mb-8">
+                        {[
+                          selectedPlanForPreview === 'basic' ? ['Standard Tasks', 'My Day Planner', 'Basic Calendar Sync (View-only)', 'Max 3 Projects'] :
+                          selectedPlanForPreview === 'pro' ? ['Everything in Basic', 'Unlimited Projects & Tags', 'Pomodoro & Focus Timer', 'Advanced Statistics', 'Priority Support', '2-Way Calendar Sync'] :
+                          selectedPlanForPreview === 'premium' ? ['Everything in Pro', 'AI Smart Scheduling', 'Workflow Automation', 'Goal Tracking', 'Advanced Analytics (Heatmaps)'] :
+                          selectedPlanForPreview === 'student' ? ['The "Study Bundle"', 'Course Management', 'Grade Tracker', 'Collaboration (5 students)'] :
+                          ['The "Team Sync" Package', 'Shared Timelines', 'Billable Hours Tracker', 'Meeting Audit', 'Enterprise Support']
+                        ][0].map((f, i) => (
+                          <li key={i} className="flex items-center gap-3 text-xs font-semibold text-[#495057]">
+                            <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                              <CheckCircle2 size={12} className="text-blue-500" />
+                            </div>
+                            {f}
+                          </li>
+                        ))}
+                      </ul>
+
+                      <Button 
+                        onClick={() => {
+                          if (selectedPlanForPreview === 'basic') {
+                            updateUserPlan(userPendingPlan.email, 'basic');
+                            login({ ...userPendingPlan, plan: 'basic' } as any);
+                            toast.success("Basic plan activated. Welcome!");
+                            setActiveTab('dashboard');
+                            setUserPendingPlan(null);
+                            setLoginView('select');
+                            if (scrollContainerRef.current) {
+                              scrollContainerRef.current.scrollTo({ top: 0, behavior: 'instant' });
+                            }
+                            window.scrollTo({ top: 0, behavior: 'instant' });
+                          } else {
+                            setIsConfirmingPayment(true);
+                          }
+                        }}
+                        className="w-full h-14 bg-[#1A1A1A] text-white rounded-2xl font-bold shadow-xl shadow-black/10 active:scale-[0.98] transition-all"
+                      >
+                        Get {selectedPlanForPreview.charAt(0).toUpperCase() + selectedPlanForPreview.slice(1)} Now
+                      </Button>
+                    </div>
+                  </div>
+                 </>
+               ) : (
+                 <motion.div 
+                   initial={{ opacity: 0, scale: 0.95 }}
+                   animate={{ opacity: 1, scale: 1 }}
+                   className="space-y-6"
+                 >
+                   <div className="bg-blue-50/50 p-8 rounded-[2.5rem] border border-blue-100 text-center">
+                     <div className="w-16 h-16 bg-blue-600/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                        <ShieldCheck className="text-blue-600" size={32} />
+                     </div>
+                     <h3 className="text-xl font-bold tracking-tight mb-2">Confirm Payment</h3>
+                     <p className="text-sm text-blue-900/70 font-medium px-4 leading-relaxed">
+                       Are you sure you want to pay <span className="text-blue-600 font-bold">
+                         {selectedPlanForPreview === 'pro' ? '$8.99' : 
+                          selectedPlanForPreview === 'premium' ? '$19.99' : 
+                          selectedPlanForPreview === 'student' ? '$4.99' : '$25'}
+                       </span> and continue with the <span className="text-blue-600 font-bold uppercase">{selectedPlanForPreview}</span> plan?
+                     </p>
+                   </div>
+
+                   <div className="p-6 border-2 border-dashed border-[#E9ECEF] rounded-[2rem] space-y-3">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-[#868E96] font-medium">Subscription</span>
+                        <span className="font-bold uppercase tracking-tight">{selectedPlanForPreview} Plan</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-[#868E96] font-medium">Billing Cycle</span>
+                        <span className="font-bold">Monthly Plan</span>
+                      </div>
+                      <div className="pt-3 border-t border-[#E9ECEF] flex justify-between items-center">
+                        <span className="font-bold text-[#1A1A1A]">Total Due Today</span>
+                        <span className="text-xl font-bold text-[#1A1A1A]">
+                          {selectedPlanForPreview === 'pro' ? '$8.99' : 
+                           selectedPlanForPreview === 'premium' ? '$19.99' : 
+                           selectedPlanForPreview === 'student' ? '$4.99' : '$25.00'}
+                        </span>
+                      </div>
+                   </div>
+
+                   <div className="space-y-3">
+                      <Button 
+                        onClick={() => {
+                          updateUserPlan(userPendingPlan.email, selectedPlanForPreview);
+                          login({ ...userPendingPlan, plan: selectedPlanForPreview } as any);
+                          toast.success(`${selectedPlanForPreview.toUpperCase()} payment successful!`);
+                          setActiveTab('dashboard');
+                          setUserPendingPlan(null);
+                          setLoginView('select');
+                          setIsConfirmingPayment(false);
+                          if (scrollContainerRef.current) {
+                            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'instant' });
+                          }
+                          window.scrollTo({ top: 0, behavior: 'instant' });
+                        }}
+                        className="w-full h-14 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-200 hover:bg-blue-700 transition-colors"
+                      >
+                        Confirm & Pay Securely
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => setIsConfirmingPayment(false)}
+                        className="w-full h-12 text-[#868E96] font-bold hover:text-[#1A1A1A]"
+                      >
+                        Change Selection
+                      </Button>
+                   </div>
+                 </motion.div>
+               )}
+
+               {!isConfirmingPayment && (
+                 <Button 
+                   variant="ghost" 
+                   onClick={() => {
+                     setUserPendingPlan(null);
+                     setLoginView('select');
+                   }}
+                   className="w-full rounded-2xl h-12 font-bold text-[#868E96] hover:text-[#1A1A1A]"
+                 >
+                   Back to Authentication
+                 </Button>
+               )}
             </div>
           )}
         </motion.div>
+
+        {/* Global Delete Confirmation Dialog */}
+        <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+           <DialogContent className="rounded-[2.5rem] p-10 border-none shadow-2xl max-w-sm">
+             <div className="text-center">
+                <div className="w-16 h-16 bg-red-50 text-red-500 rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-sm border border-red-100">
+                  <Trash2 size={24} />
+                </div>
+                <h3 className="text-xl font-bold tracking-tight mb-2">Delete Account?</h3>
+                <p className="text-sm text-[#868E96] leading-relaxed mb-8">
+                  Are you sure you want to remove <span className="font-bold text-[#1A1A1A]">{accountToDelete?.name}</span>? This will permanently delete ALL associated tasks, logs, and settings.
+                </p>
+                
+                <div className="flex flex-col gap-3">
+                  <Button 
+                    variant="destructive"
+                    className="w-full rounded-2xl h-14 font-bold shadow-lg shadow-red-200"
+                    onClick={() => {
+                      if (accountToDelete) {
+                        removeAccount(accountToDelete.email);
+                        setIsDeleteConfirmOpen(false);
+                        setAccountToDelete(null);
+                        if (loginView === 'create_choice' && accounts.length <= 3) {
+                          // Allow proceed if we were in the limit view
+                        }
+                      }
+                    }}
+                  >
+                    Delete Permanently
+                  </Button>
+                  <Button 
+                    variant="ghost"
+                    className="w-full h-12 font-bold text-[#868E96]"
+                    onClick={() => {
+                      setIsDeleteConfirmOpen(false);
+                      setAccountToDelete(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+             </div>
+           </DialogContent>
+        </Dialog>
       </div>
-    );
-  }
+    ) as any;
 
   const handleAiSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -809,7 +1346,9 @@ export default function App() {
     }, 0) + productiveSeconds;
 
   return (
-    <div className="flex h-screen bg-[#F8F9FA] text-[#1A1A1A] font-sans selection:bg-black selection:text-white">
+    <div className="min-h-screen">
+      {loginContent}
+      
       <Dialog open={!!selectedEmail} onOpenChange={(open) => !open && setSelectedEmail(null)}>
         <DialogContent className="max-w-3xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
           {selectedEmail && (
@@ -895,8 +1434,10 @@ export default function App() {
       </Dialog>
 
       <Toaster position="top-right" richColors />
-      
-      {/* Mobile Sidebar Overlay */}
+
+      {isAuthenticated && (
+        <div className="flex h-screen bg-[#F8F9FA] text-[#1A1A1A] font-sans selection:bg-black selection:text-white">
+          {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
           <>
@@ -969,6 +1510,7 @@ export default function App() {
                     onClick={() => {
                       logout();
                       setSelectedAccountForLogin(null);
+                      setLoginView('select');
                       setIsSidebarOpen(false);
                     }}
                   >
@@ -1260,6 +1802,7 @@ export default function App() {
                       onClick={() => {
                         logout();
                         setSelectedAccountForLogin(null);
+                        setLoginView('select');
                       }}
                       className="rounded-2xl px-6 h-12 font-bold flex items-center gap-2 text-red-500 hover:text-red-600 hover:bg-red-50"
                     >
@@ -1312,10 +1855,16 @@ export default function App() {
                                   BASIC PLAN — FREE
                                 </SelectItem>
                                 <SelectItem value="pro" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
-                                  PRO PLAN — $5/MONTH
+                                  PRO PLAN — $8.99/MONTH
                                 </SelectItem>
                                 <SelectItem value="premium" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
-                                  PREMIUM PLAN — $10/MONTH
+                                  PREMIUM PLAN — $19.99/MONTH
+                                </SelectItem>
+                                <SelectItem value="student" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
+                                  STUDENT PLAN — $4.99/MONTH
+                                </SelectItem>
+                                <SelectItem value="enterprise" className="uppercase font-bold text-xs py-4 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer">
+                                  ENTERPRISE PLAN — $25.00/MONTH
                                 </SelectItem>
                               </SelectContent>
                             </Select>
@@ -1418,10 +1967,23 @@ export default function App() {
                               </div>
                               <div>
                                 <p className="font-bold">Email Verification</p>
-                                <p className="text-xs text-[#868E96]">Your email is verified</p>
+                                <p className="text-xs text-[#868E96]">
+                                  {user?.isEmailVerified ? 'Your email is verified' : 'Your email is not verified'}
+                                </p>
                               </div>
                             </div>
-                            <Badge className="bg-green-50 text-green-600 border-none px-3 py-1 rounded-full font-bold text-[10px]">Verified</Badge>
+                            {user?.isEmailVerified ? (
+                              <Badge className="bg-green-50 text-green-600 border-none px-3 py-1 rounded-full font-bold text-[10px]">Verified</Badge>
+                            ) : (
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="rounded-xl font-bold bg-white text-blue-600 border-blue-600 hover:bg-blue-50"
+                                onClick={() => handleSendVerificationEmail(user?.email || '', () => {})}
+                              >
+                                Verify Now
+                              </Button>
+                            )}
                           </div>
 
                           <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
@@ -1479,6 +2041,95 @@ export default function App() {
                               checked={overdueNotificationsEnabled}
                               onCheckedChange={setOverdueNotificationsEnabled}
                             />
+                          </div>
+                        </div>
+                      </Card>
+
+                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
+                        <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
+                          <Clock size={20} className="text-blue-600" />
+                          Time & Localization
+                        </h4>
+                        <div className="space-y-6">
+                          <div className="space-y-4">
+                            <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Saved Timezones ({savedTimezones.length}/5)</Label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {savedTimezones.map((tz) => (
+                                <div 
+                                  key={tz}
+                                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
+                                    timezone === tz ? 'border-blue-600 bg-blue-50/50 shadow-sm' : 'border-[#F1F3F5] bg-[#F8F9FA] hover:border-[#CED4DA]'
+                                  }`}
+                                  onClick={() => setTimezone(tz)}
+                                >
+                                  <div className="min-w-0">
+                                    <p className="font-bold text-sm truncate">{tz.split('/').pop()?.replace(/_/g, ' ')}</p>
+                                    <p className="text-[10px] text-[#ADB5BD] font-medium truncate">{tz}</p>
+                                    <p className="text-[10px] text-blue-600 font-bold mt-1">
+                                      {format(getZonedTime(currentTime, tz), timeFormat === '24h' ? 'HH:mm:ss' : 'hh:mm:ss a')}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {timezone === tz && <CheckCircle2 size={16} className="text-blue-600 shrink-0" />}
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (savedTimezones.length <= 1) {
+                                          toast.error("You must have at least one timezone");
+                                          return;
+                                        }
+                                        removeTimezone(tz);
+                                      }}
+                                      className="p-1 hover:bg-black/5 rounded-lg text-[#ADB5BD] hover:text-red-500 transition-colors"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                              {savedTimezones.length < 5 && (
+                                <button
+                                  onClick={() => {
+                                    const tz = prompt("Enter timezone (e.g. UTC, Asia/Tokyo, America/New_York)");
+                                    if (tz) {
+                                      try {
+                                        Intl.DateTimeFormat(undefined, { timeZone: tz }).format();
+                                        addTimezone(tz);
+                                      } catch (e) {
+                                        toast.error("Invalid timezone format");
+                                      }
+                                    }
+                                  }}
+                                  className="p-4 rounded-2xl border-2 border-dashed border-[#CED4DA] text-[#ADB5BD] font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:border-blue-600 hover:text-blue-600 transition-all active:scale-[0.98]"
+                                >
+                                  <Plus size={16} /> Add Timezone
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-[#868E96] font-medium italic mt-2">* Limiting to 5 timezones. Switching updates the global app clock.</p>
+                          </div>
+
+                          <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
+                            <div className="flex items-center gap-4">
+                              <div className="p-3 bg-white rounded-xl shadow-sm">
+                                <Clock size={20} className="text-[#495057]" />
+                              </div>
+                              <div>
+                                <p className="font-bold">Time Format</p>
+                                <p className="text-xs text-[#868E96]">Switch between 12h and 24h</p>
+                              </div>
+                            </div>
+                            <div className="flex bg-white p-1 rounded-xl shadow-sm">
+                              {['12h', '24h'].map((f) => (
+                                <button
+                                  key={f}
+                                  onClick={() => setTimeFormat(f as any)}
+                                  className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${timeFormat === f ? 'bg-[#1A1A1A] text-white' : 'text-[#ADB5BD] hover:text-[#1A1A1A]'}`}
+                                >
+                                  {f}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </Card>
@@ -2708,19 +3359,19 @@ export default function App() {
                       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500" />
                       
                       {clockType === 'analog' ? (
-                        <AnalogClock time={currentTime} />
+                        <AnalogClock time={getZonedTime(currentTime, timezone)} />
                       ) : (
                         <div className="text-center">
                           <div className="flex items-baseline gap-3">
                             <span className="text-6xl font-black tracking-tighter text-[#1A1A1A] tabular-nums">
-                              {format(currentTime, timeFormat === '24h' ? 'HH:mm' : 'hh:mm')}
+                              {format(getZonedTime(currentTime, timezone), timeFormat === '24h' ? 'HH:mm' : 'hh:mm')}
                             </span>
                             <span className="text-2xl font-bold text-[#CED4DA] tabular-nums">
-                              {format(currentTime, 'ss')}
+                              {format(getZonedTime(currentTime, timezone), 'ss')}
                             </span>
                             {timeFormat === '12h' && (
                               <span className="text-lg font-bold text-[#868E96] uppercase ml-1">
-                                {format(currentTime, 'a')}
+                                {format(getZonedTime(currentTime, timezone), 'a')}
                               </span>
                             )}
                           </div>
@@ -3656,6 +4307,8 @@ export default function App() {
           </div>
         </div>
       </main>
+        </div>
+      )}
       {/* Profile Picture Zoom Dialog */}
       <Dialog open={isZoomOpen} onOpenChange={setIsZoomOpen}>
         <DialogContent className="max-w-2xl p-0 overflow-hidden bg-transparent border-none shadow-none" showCloseButton={false}>
@@ -3755,12 +4408,37 @@ export default function App() {
               Are you willing to pay the amount currently being asked by the application for the <span className="font-bold uppercase">{pendingPlan}</span> plan?
             </DialogDescription>
           </DialogHeader>
-          <div className="py-6">
-            <div className="p-6 bg-[#F8F9FA] rounded-2xl border border-[#E9ECEF]">
+          <div className="py-6 space-y-6">
+            <div className="p-4 bg-[#F8F9FA] rounded-2xl border border-[#E9ECEF]">
               <p className="text-sm font-bold uppercase tracking-widest text-[#868E96] mb-2">Selected Plan</p>
               <p className="text-xl font-bold uppercase">
-                {pendingPlan} PLAN — {pendingPlan === 'basic' ? 'FREE' : pendingPlan === 'pro' ? '$5/MONTH' : '$10/MONTH'}
+                {pendingPlan} PLAN — {
+                  pendingPlan === 'basic' ? 'FREE' : 
+                  pendingPlan === 'pro' ? '$8.99/MONTH' : 
+                  pendingPlan === 'premium' ? '$19.99/MONTH' : 
+                  pendingPlan === 'student' ? '$4.99/MONTH' : '$25.00/MONTH'
+                }
               </p>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#868E96] px-2">Plan Features</p>
+              <ul className="space-y-3 bg-[#F8F9FA]/50 p-4 rounded-2xl border border-[#F1F3F5]">
+                {[
+                  pendingPlan === 'basic' ? ['Standard Tasks', 'My Day Planner', 'Basic Calendar Sync (View-only)', 'Max 3 Projects'] :
+                  pendingPlan === 'pro' ? ['Everything in Basic', 'Unlimited Projects & Tags', 'Pomodoro & Focus Timer', 'Advanced Statistics', 'Priority Support', '2-Way Calendar Sync'] :
+                  pendingPlan === 'premium' ? ['Everything in Pro', 'AI Smart Scheduling', 'Workflow Automation', 'Goal Tracking', 'Advanced Analytics (Heatmaps)'] :
+                  pendingPlan === 'student' ? ['The "Study Bundle"', 'Course Management', 'Grade Tracker', 'Collaboration (5 students)'] :
+                  ['The "Team Sync" Package', 'Shared Timelines', 'Billable Hours Tracker', 'Meeting Audit', 'Enterprise Support']
+                ][0].map((f, i) => (
+                  <li key={i} className="flex items-center gap-3 text-xs font-semibold text-[#495057]">
+                    <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                      <CheckCircle2 size={12} className="text-blue-500" />
+                    </div>
+                    {f}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
           <DialogFooter className="gap-3">
@@ -3900,6 +4578,128 @@ export default function App() {
               className="bg-[#1A1A1A] text-white rounded-xl h-12 px-8 font-bold flex-1"
             >
               Enable 2SV
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Forgot Password Dialog */}
+      <Dialog open={isForgotPasswordOpen} onOpenChange={setIsForgotPasswordOpen}>
+        <DialogContent className="max-w-md rounded-[2.5rem] p-8">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold tracking-tight">Recover Password</DialogTitle>
+            <DialogDescription>We'll help you get back into your account</DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-6">
+            {resetStep === 'input_email' && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Confirm Email Address</Label>
+                  <Input 
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    className="rounded-xl h-12 border-[#E9ECEF]"
+                  />
+                </div>
+                <Button onClick={handleForgotPassword} className="w-full h-12 bg-[#1A1A1A] text-white rounded-xl font-bold shadow-lg">
+                  Confirm Account
+                </Button>
+              </div>
+            )}
+            {resetStep === 'input_new_password' && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">New Secure Password</Label>
+                  <Input 
+                    type="password"
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="rounded-xl h-12 border-[#E9ECEF]"
+                  />
+                </div>
+                <Button onClick={handleResetPassword} className="w-full h-12 bg-[#1A1A1A] text-white rounded-xl font-bold">
+                  Reset Password & Login
+                </Button>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => {
+              setIsForgotPasswordOpen(false);
+              setResetStep('input_email');
+            }} className="w-full h-12 font-bold text-[#868E96]">
+              Cancel Recovery
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Verification Modal */}
+      <Dialog open={isVerificationModalOpen} onOpenChange={setIsVerificationModalOpen}>
+        <DialogContent className="max-w-md rounded-[2.5rem] p-8 text-center">
+          <DialogHeader>
+            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white mb-4 mx-auto shadow-lg">
+              <Mail size={24} />
+            </div>
+            <DialogTitle className="text-2xl font-bold tracking-tight">Confirm Verification</DialogTitle>
+            <DialogDescription>
+              Verify your email address now to secure your account.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6">
+            <Button onClick={handleConfirmVerification} className="w-full h-12 bg-[#1A1A1A] text-white rounded-xl font-bold shadow-xl">
+              Confirm Email Address
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Account Recovery Confirmation */}
+      <Dialog open={isRecoveryConfirmOpen} onOpenChange={setIsRecoveryConfirmOpen}>
+        <DialogContent className="max-w-md rounded-[2.5rem] p-8">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold tracking-tight">Account Recovery</DialogTitle>
+            <DialogDescription>
+              An account with this email already exists on another device. Would you like to recover it?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6">
+            <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100 flex items-center gap-4">
+              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                <ShieldCheck size={24} />
+              </div>
+              <div>
+                <p className="font-bold text-blue-900">Existing Account Found</p>
+                <p className="text-xs text-blue-600">{recoveryEmail}</p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-3">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsRecoveryConfirmOpen(false)} 
+              className="rounded-xl h-12 flex-1 font-bold"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => {
+                const recovered = recoverAccount(recoveryEmail);
+                if (recovered) {
+                  setIsRecoveryConfirmOpen(false);
+                  setNewEmail('');
+                  setNewName('');
+                  setNewPassword('');
+                  setLoginView('select');
+                }
+              }} 
+              className="bg-[#1A1A1A] text-white rounded-xl h-12 flex-1 font-bold shadow-lg"
+            >
+              Recover Account
             </Button>
           </DialogFooter>
         </DialogContent>

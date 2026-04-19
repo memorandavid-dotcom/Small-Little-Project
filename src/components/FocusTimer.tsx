@@ -24,6 +24,14 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { toast } from 'sonner';
 import { useChronosStore } from '../hooks/useChronosStore';
 import { TaskStatus, TimerStep } from '../types';
@@ -55,6 +63,9 @@ export function FocusTimer() {
   const [newStepType, setNewStepType] = useState<'work' | 'break' | 'review'>('work');
   const [newStepDuration, setNewStepDuration] = useState(25);
   const [newStepLabel, setNewStepLabel] = useState('');
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
+  
+  const [showPlanOverview, setShowPlanOverview] = useState(false);
 
   const inProgressTasks = tasks.filter(t => t.status === TaskStatus.IN_PROGRESS);
 
@@ -109,6 +120,37 @@ export function FocusTimer() {
 
   const removeStep = (id: string) => {
     setPlanSteps(planSteps.filter(s => s.id !== id));
+  };
+
+  const moveStep = (id: string, direction: 'up' | 'down') => {
+    const idx = planSteps.findIndex(s => s.id === id);
+    if ((direction === 'up' && idx === 0) || (direction === 'down' && idx === planSteps.length - 1)) return;
+    
+    const newSteps = [...planSteps];
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    [newSteps[idx], newSteps[targetIdx]] = [newSteps[targetIdx], newSteps[idx]];
+    setPlanSteps(newSteps);
+  };
+
+  const editStep = (id: string) => {
+    const step = planSteps.find(s => s.id === id);
+    if (!step) return;
+    setEditingStepId(id);
+    setNewStepType(step.type);
+    setNewStepDuration(step.duration);
+    setNewStepLabel(step.label || '');
+  };
+
+  const saveEdit = () => {
+    if (!editingStepId) return;
+    setPlanSteps(planSteps.map(s => s.id === editingStepId ? {
+      ...s,
+      type: newStepType,
+      duration: newStepDuration,
+      label: newStepLabel
+    } : s));
+    setEditingStepId(null);
+    setNewStepLabel('');
   };
 
   return (
@@ -182,6 +224,22 @@ export function FocusTimer() {
 
               <div className="space-y-4">
                 <div className="p-4 bg-[#F8F9FA] rounded-[1.5rem] border border-[#E9ECEF] space-y-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className="text-[10px] font-bold uppercase tracking-widest text-[#868E96]">
+                      {editingStepId ? 'Edit Step' : 'Add New Step'}
+                    </Label>
+                    {editingStepId && (
+                      <button 
+                        onClick={() => {
+                          setEditingStepId(null);
+                          setNewStepLabel('');
+                        }}
+                        className="text-[9px] font-bold text-red-500 uppercase"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label className="text-[10px] font-bold uppercase tracking-widest text-[#868E96]">Type</Label>
@@ -190,9 +248,11 @@ export function FocusTimer() {
                         onChange={(e) => {
                           const val = e.target.value as any;
                           setNewStepType(val);
-                          if (val === 'work') setNewStepDuration(25);
-                          else if (val === 'break') setNewStepDuration(5);
-                          else setNewStepDuration(15);
+                          if (!editingStepId) {
+                            if (val === 'work') setNewStepDuration(25);
+                            else if (val === 'break') setNewStepDuration(5);
+                            else setNewStepDuration(15);
+                          }
                         }}
                         className="w-full rounded-xl border-[#E9ECEF] bg-white h-9 px-3 text-xs font-bold uppercase tracking-widest focus:outline-none"
                       >
@@ -220,9 +280,15 @@ export function FocusTimer() {
                         onChange={(e) => setNewStepLabel(e.target.value)}
                         className="rounded-xl border-[#E9ECEF] h-9 text-xs"
                       />
-                      <Button onClick={addStepToPlan} size="icon" className="h-9 w-9 shrink-0 bg-[#1A1A1A] text-white rounded-xl">
-                        <Plus size={18} />
-                      </Button>
+                      {editingStepId ? (
+                        <Button onClick={saveEdit} size="icon" className="h-9 w-9 shrink-0 bg-blue-600 text-white rounded-xl">
+                          <CheckCircle2 size={18} />
+                        </Button>
+                      ) : (
+                        <Button onClick={addStepToPlan} size="icon" className="h-9 w-9 shrink-0 bg-[#1A1A1A] text-white rounded-xl">
+                          <Plus size={18} />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -232,17 +298,17 @@ export function FocusTimer() {
                     Upcoming Path
                     <span>{planSteps.length} Steps</span>
                   </Label>
-                  <ScrollArea className="h-[120px] rounded-2xl bg-[#F8F9FA]/50 border border-dashed border-[#E9ECEF] p-3">
+                  <ScrollArea className="h-[150px] rounded-2xl bg-[#F8F9FA]/50 border border-dashed border-[#E9ECEF] p-3">
                     <div className="space-y-2">
                       {planSteps.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center opacity-40 pt-6">
+                        <div className="h-full flex flex-col items-center justify-center opacity-40 pt-10">
                           <ListPlus size={24} className="mb-2" />
                           <p className="text-[10px] font-bold uppercase tracking-widest">No steps added yet</p>
                         </div>
                       ) : (
                         planSteps.map((step, idx) => (
-                          <div key={step.id} className="flex items-center gap-3 p-2 bg-white rounded-xl border border-[#E9ECEF] group">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm ${
+                          <div key={step.id} className={`flex items-center gap-3 p-3 bg-white rounded-xl border transition-all group ${editingStepId === step.id ? 'border-blue-600 ring-2 ring-blue-100' : 'border-[#E9ECEF]'}`}>
+                            <div className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold text-white shadow-sm ${
                               step.type === 'work' ? 'bg-[#1A1A1A]' : step.type === 'break' ? 'bg-[#40C057]' : 'bg-[#FA5252]'
                             }`}>
                               {idx + 1}
@@ -251,9 +317,22 @@ export function FocusTimer() {
                               <p className="text-[10px] font-bold uppercase tracking-widest truncate">{step.type}</p>
                               <p className="text-[10px] text-[#868E96] truncate">{step.duration} min {step.label && `• ${step.label}`}</p>
                             </div>
-                            <Button variant="ghost" size="icon" onClick={() => removeStep(step.id)} className="w-6 h-6 rounded-lg text-[#CED4DA] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Trash2 size={12} />
-                            </Button>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex flex-col gap-0.5 mr-1">
+                                <button onClick={() => moveStep(step.id, 'up')} disabled={idx === 0} className="text-[#ADB5BD] hover:text-[#1A1A1A] disabled:opacity-30">
+                                  <ChevronDown size={14} className="rotate-180" />
+                                </button>
+                                <button onClick={() => moveStep(step.id, 'down')} disabled={idx === planSteps.length - 1} className="text-[#ADB5BD] hover:text-[#1A1A1A] disabled:opacity-30">
+                                  <ChevronDown size={14} />
+                                </button>
+                              </div>
+                              <Button variant="ghost" size="icon" onClick={() => editStep(step.id)} className="w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50">
+                                <Settings2 size={14} />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => removeStep(step.id)} className="w-8 h-8 rounded-lg text-red-500 hover:bg-red-50">
+                                <Trash2 size={14} />
+                              </Button>
+                            </div>
                           </div>
                         ))
                       )}
@@ -264,15 +343,11 @@ export function FocusTimer() {
                 <div className="pt-2">
                   <Button 
                     disabled={planSteps.length === 0}
-                    onClick={() => {
-                      startPlan(planSteps);
-                      setIsPlanningMode(false);
-                      setPlanSteps([]);
-                    }}
+                    onClick={() => setShowPlanOverview(true)}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-12 font-bold text-xs uppercase tracking-widest shadow-lg shadow-blue-500/20 gap-2"
                   >
-                    <PlayCircle size={18} />
-                    Execute Focus Plan
+                    <ArrowRight size={18} />
+                    Finalize Plan
                   </Button>
                 </div>
               </div>
@@ -494,6 +569,51 @@ export function FocusTimer() {
           )}
         </CardContent>
       </Card>
+      <Dialog open={showPlanOverview} onOpenChange={setShowPlanOverview}>
+        <DialogContent className="max-w-md rounded-[2.5rem] p-8">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold tracking-tight">Finalize Focus Plan</DialogTitle>
+            <DialogDescription>Review your upcoming sequence before starting</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[300px] my-6 pr-4">
+            <div className="space-y-3">
+              {planSteps.map((step, idx) => (
+                <div key={step.id} className="p-4 bg-[#F8F9FA] rounded-2xl border border-[#E9ECEF] flex items-center gap-4">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-md ${
+                    step.type === 'work' ? 'bg-[#1A1A1A]' : step.type === 'break' ? 'bg-[#40C057]' : 'bg-[#FA5252]'
+                  }`}>
+                    {idx + 1}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs font-bold uppercase tracking-widest text-[#1A1A1A]">
+                      {step.type} • {step.duration} Min
+                    </p>
+                    {step.label && <p className="text-xs text-[#868E96] mt-0.5">{step.label}</p>}
+                  </div>
+                </div>
+              ))}
+              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 mt-4">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 mb-1">Total Plan Duration</p>
+                <p className="text-lg font-bold text-blue-900">{planSteps.reduce((acc, s) => acc + s.duration, 0)} Minutes</p>
+              </div>
+            </div>
+          </ScrollArea>
+          <DialogFooter className="gap-3">
+            <Button variant="outline" onClick={() => setShowPlanOverview(false)} className="rounded-xl h-12">Edit Further</Button>
+            <Button 
+              onClick={() => {
+                startPlan(planSteps);
+                setShowPlanOverview(false);
+                setIsPlanningMode(false);
+                setPlanSteps([]);
+              }}
+              className="bg-[#1A1A1A] text-white rounded-xl h-12 px-8 font-bold flex-1"
+            >
+              Start Focus Plan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

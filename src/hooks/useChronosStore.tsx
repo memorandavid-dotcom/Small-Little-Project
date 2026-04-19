@@ -5,14 +5,41 @@ import { toast } from 'sonner';
 import { Task, ScheduleItem, Reminder, TimeUsageLog, TaskStatus, Email, TimerStep } from '../types';
 
 export function useChronosStoreInternal() {
+  const [user, setUser] = useState<{ 
+    name: string; 
+    firstName?: string;
+    lastName?: string;
+    displayName?: string;
+    email: string; 
+    avatar: string;
+    password?: string;
+    plan?: 'basic' | 'pro' | 'premium' | 'student' | 'enterprise';
+    contactInfo?: string;
+    autoDeleteFinishedTasks?: boolean;
+    gmailTokens?: any;
+    uploadedAvatar?: string | null;
+    is2SVEnabled?: boolean;
+    recoveryCode?: string;
+    isEmailVerified?: boolean;
+    savedTimezones?: string[];
+  } | null>(() => {
+    const saved = localStorage.getItem('chronos_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const [tasks, setTasks] = useState<Task[]>(() => {
-    const saved = localStorage.getItem('chronos_tasks');
+    if (!user) return [];
+    const saved = localStorage.getItem(`chronos_${user.email}_tasks`);
     return saved ? JSON.parse(saved) : [];
   });
 
   const [emails, setEmails] = useState<Email[]>(() => {
-    const saved = localStorage.getItem('chronos_emails');
-    return saved ? JSON.parse(saved) : [
+    if (!user) return [];
+    const saved = localStorage.getItem(`chronos_${user.email}_emails`);
+    if (saved) return JSON.parse(saved);
+    
+    // Default emails for new user session
+    return [
       {
         id: '1',
         sender: 'Sarah Jenkins',
@@ -53,57 +80,111 @@ export function useChronosStoreInternal() {
   });
 
   const [schedule, setSchedule] = useState<ScheduleItem[]>(() => {
-    const saved = localStorage.getItem('chronos_schedule');
+    if (!user) return [];
+    const saved = localStorage.getItem(`chronos_${user.email}_schedule`);
     return saved ? JSON.parse(saved) : [];
   });
 
   const [reminders, setReminders] = useState<Reminder[]>(() => {
-    const saved = localStorage.getItem('chronos_reminders');
+    if (!user) return [];
+    const saved = localStorage.getItem(`chronos_${user.email}_reminders`);
     return saved ? JSON.parse(saved) : [];
   });
 
   const [logs, setLogs] = useState<TimeUsageLog[]>(() => {
-    const saved = localStorage.getItem('chronos_logs');
+    if (!user) return [];
+    const saved = localStorage.getItem(`chronos_${user.email}_logs`);
     return saved ? JSON.parse(saved) : [];
   });
 
   const [draftTask, setDraftTask] = useState<Partial<Task>>(() => {
-    const saved = localStorage.getItem('chronos_draft_task');
+    if (!user) return {};
+    const saved = localStorage.getItem(`chronos_${user.email}_draft_task`);
     return saved ? JSON.parse(saved) : {};
   });
-
-  useEffect(() => {
-    localStorage.setItem('chronos_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
-    localStorage.setItem('chronos_schedule', JSON.stringify(schedule));
-  }, [schedule]);
-
-  useEffect(() => {
-    localStorage.setItem('chronos_reminders', JSON.stringify(reminders));
-  }, [reminders]);
-
-  useEffect(() => {
-    localStorage.setItem('chronos_logs', JSON.stringify(logs));
-  }, [logs]);
-
-  useEffect(() => {
-    localStorage.setItem('chronos_emails', JSON.stringify(emails));
-  }, [emails]);
 
   const [draftEvent, setDraftEvent] = useState<Partial<ScheduleItem>>(() => {
-    const saved = localStorage.getItem('chronos_draft_event');
+    if (!user) return {};
+    const saved = localStorage.getItem(`chronos_${user.email}_draft_event`);
     return saved ? JSON.parse(saved) : {};
   });
 
+  // Load user data when user changes
   useEffect(() => {
-    localStorage.setItem('chronos_draft_task', JSON.stringify(draftTask));
-  }, [draftTask]);
+    if (user) {
+      const uTasks = localStorage.getItem(`chronos_${user.email}_tasks`);
+      const uSchedule = localStorage.getItem(`chronos_${user.email}_schedule`);
+      const uReminders = localStorage.getItem(`chronos_${user.email}_reminders`);
+      const uLogs = localStorage.getItem(`chronos_${user.email}_logs`);
+      const uEmails = localStorage.getItem(`chronos_${user.email}_emails`);
+      const uDraftTask = localStorage.getItem(`chronos_${user.email}_draft_task`);
+      const uDraftEvent = localStorage.getItem(`chronos_${user.email}_draft_event`);
+
+      setTasks(uTasks ? JSON.parse(uTasks) : []);
+      setSchedule(uSchedule ? JSON.parse(uSchedule) : []);
+      setReminders(uReminders ? JSON.parse(uReminders) : []);
+      setLogs(uLogs ? JSON.parse(uLogs) : []);
+      setDraftTask(uDraftTask ? JSON.parse(uDraftTask) : {});
+      setDraftEvent(uDraftEvent ? JSON.parse(uDraftEvent) : {});
+
+      if (uEmails) {
+        setEmails(JSON.parse(uEmails));
+      } else {
+        // Keep current default emails if first time
+      }
+    } else {
+      // Clear memory on logout
+      setTasks([]);
+      setSchedule([]);
+      setReminders([]);
+      setLogs([]);
+      setEmails([]);
+      setDraftTask({});
+      setDraftEvent({});
+    }
+  }, [user?.email]);
 
   useEffect(() => {
-    localStorage.setItem('chronos_draft_event', JSON.stringify(draftEvent));
-  }, [draftEvent]);
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_tasks`, JSON.stringify(tasks));
+    }
+  }, [tasks, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_schedule`, JSON.stringify(schedule));
+    }
+  }, [schedule, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_reminders`, JSON.stringify(reminders));
+    }
+  }, [reminders, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_logs`, JSON.stringify(logs));
+    }
+  }, [logs, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_emails`, JSON.stringify(emails));
+    }
+  }, [emails, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_draft_task`, JSON.stringify(draftTask));
+    }
+  }, [draftTask, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_draft_event`, JSON.stringify(draftEvent));
+    }
+  }, [draftEvent, user?.email]);
 
   // Auto-cleanup finished tasks older than 30 days
   useEffect(() => {
@@ -193,29 +274,12 @@ export function useChronosStoreInternal() {
     lockoutUntil?: string | null;
     is2SVEnabled?: boolean;
     recoveryCode?: string;
+    isEmailVerified?: boolean;
+    otpCode?: string | null;
+    otpExpiry?: string | null;
   }[]>(() => {
     const saved = localStorage.getItem('chronos_accounts');
     return saved ? JSON.parse(saved) : [];
-  });
-
-  const [user, setUser] = useState<{ 
-    name: string; 
-    firstName?: string;
-    lastName?: string;
-    displayName?: string;
-    email: string; 
-    avatar: string;
-    password?: string;
-    plan?: 'basic' | 'pro' | 'premium';
-    contactInfo?: string;
-    autoDeleteFinishedTasks?: boolean;
-    gmailTokens?: any;
-    uploadedAvatar?: string | null;
-    is2SVEnabled?: boolean;
-    recoveryCode?: string;
-  } | null>(() => {
-    const saved = localStorage.getItem('chronos_user');
-    return saved ? JSON.parse(saved) : null;
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -242,7 +306,7 @@ export function useChronosStoreInternal() {
     email: string; 
     avatar: string;
     password?: string;
-    plan?: 'basic' | 'pro' | 'premium';
+    plan?: 'basic' | 'pro' | 'premium' | 'student' | 'enterprise';
     contactInfo?: string;
     autoDeleteFinishedTasks?: boolean;
     gmailTokens?: any;
@@ -300,31 +364,97 @@ export function useChronosStoreInternal() {
     lastName?: string;
     displayName?: string;
   }) => {
-    if (accounts.length >= 3) {
-      toast.error("Account limit reached. (Max 3)");
-      return false;
-    }
+    // Simulate checking a global database for multi-device recovery
+    const globalAccountsStr = localStorage.getItem('chronos_global_accounts');
+    const globalAccounts: any[] = globalAccountsStr ? JSON.parse(globalAccountsStr) : [];
     
     if (accounts.some(acc => acc.email === userData.email)) {
-      toast.error("Email already in use");
-      return false;
+      toast.error("Email already in use on this device");
+      return { success: false };
     }
 
+    if (globalAccounts.some(acc => acc.email === userData.email)) {
+      return { success: false, existsRemotely: true };
+    }
+
+    if (accounts.length >= 3) {
+      toast.error("Account limit reached. (Max 3)");
+      return { success: false };
+    }
+    
     const newUser = {
       ...userData,
       failedAttempts: 0,
-      lockoutUntil: null
+      lockoutUntil: null,
+      isEmailVerified: false
     };
 
     setAccounts(prev => [...prev, newUser]);
-    setUser(newUser);
-    setIsAuthenticated(true);
-    return true;
+    
+    // Update global database
+    globalAccounts.push(newUser);
+    localStorage.setItem('chronos_global_accounts', JSON.stringify(globalAccounts));
+
+    return { success: true };
+  };
+
+  const recoverAccount = (email: string) => {
+    const globalAccountsStr = localStorage.getItem('chronos_global_accounts');
+    const globalAccounts: any[] = globalAccountsStr ? JSON.parse(globalAccountsStr) : [];
+    const remoteAcc = globalAccounts.find(acc => acc.email === email);
+    
+    if (remoteAcc) {
+      // Add to local device
+      setAccounts(prev => {
+        if (prev.some(acc => acc.email === email)) return prev;
+        return [...prev, remoteAcc];
+      });
+      toast.success("Account recovered successfully! You can now log in.");
+      return true;
+    }
+    return false;
   };
 
   const logout = () => {
     setIsAuthenticated(false);
     setUser(null);
+  };
+
+  const removeAccount = (email: string) => {
+    setAccounts(prev => prev.filter(acc => acc.email !== email));
+    
+    // Also remove from simulated global database
+    const globalAccountsStr = localStorage.getItem('chronos_global_accounts');
+    if (globalAccountsStr) {
+      const globalAccounts: any[] = JSON.parse(globalAccountsStr);
+      const filtered = globalAccounts.filter(acc => acc.email !== email);
+      localStorage.setItem('chronos_global_accounts', JSON.stringify(filtered));
+    }
+    
+    // Delete "the whole data from the user"
+    // Use user-specific keys to ensure isolation
+    localStorage.removeItem(`chronos_${email}_tasks`);
+    localStorage.removeItem(`chronos_${email}_schedule`);
+    localStorage.removeItem(`chronos_${email}_reminders`);
+    localStorage.removeItem(`chronos_${email}_logs`);
+    localStorage.removeItem(`chronos_${email}_emails`);
+    localStorage.removeItem(`chronos_${email}_draft_task`);
+    localStorage.removeItem(`chronos_${email}_draft_event`);
+    
+    // If the account being removed is the current one, logout and clear memory
+    if (user?.email === email) {
+      setTasks([]);
+      setSchedule([]);
+      setReminders([]);
+      setLogs([]);
+      setEmails([]);
+      setDraftTask({});
+      setDraftEvent({});
+      setIsAuthenticated(false);
+      setUser(null);
+    }
+    
+    toast.success("Account and its private data deleted permanently");
   };
 
   const updateProfile = (updates: Partial<{ 
@@ -334,13 +464,14 @@ export function useChronosStoreInternal() {
     displayName: string;
     email: string; 
     avatar: string;
-    plan: 'basic' | 'pro' | 'premium';
+    plan: 'basic' | 'pro' | 'premium' | 'student' | 'enterprise';
     contactInfo: string;
     autoDeleteFinishedTasks: boolean;
     gmailTokens: any;
     uploadedAvatar: string | null;
     is2SVEnabled: boolean;
     recoveryCode: string;
+    savedTimezones: string[];
   }>) => {
     setUser(prev => {
       if (!prev) return null;
@@ -349,6 +480,21 @@ export function useChronosStoreInternal() {
       setAccounts(accs => accs.map(acc => acc.email === prev.email ? { ...acc, ...updates } : acc));
       return updated;
     });
+  };
+
+  const updateUserPlan = (email: string, plan: 'basic' | 'pro' | 'premium' | 'student' | 'enterprise') => {
+    setAccounts(prev => prev.map(acc => acc.email === email ? { ...acc, plan } : acc));
+    if (user?.email === email) {
+      setUser(prev => prev ? { ...prev, plan } : null);
+    }
+    
+    // Update in global storage as well
+    const globalAccountsStr = localStorage.getItem('chronos_global_accounts');
+    if (globalAccountsStr) {
+      const globalAccounts: any[] = JSON.parse(globalAccountsStr);
+      const updated = globalAccounts.map(acc => acc.email === email ? { ...acc, plan } : acc);
+      localStorage.setItem('chronos_global_accounts', JSON.stringify(updated));
+    }
   };
 
   const changePassword = (oldPassword: string, newPassword: string) => {
@@ -416,6 +562,61 @@ export function useChronosStoreInternal() {
     toast.info("Focus Plan Cancelled");
   };
 
+  const sendOTP = (email: string) => {
+    const account = accounts.find(acc => acc.email === email);
+    if (!account) return { success: false, message: 'Account not found' };
+
+    // OTP sender functionality removed as requested. 
+    // Recovery flows now use a direct bypass ('SKIP_OTP').
+    toast.success(`Recovery access granted for ${email}`);
+    return { success: true };
+  };
+
+  const verifyOTPAndResetPassword = (email: string, otp: string, newPassword?: string) => {
+    const account = accounts.find(acc => acc.email === email);
+    if (!account) return { success: false, message: 'Account not found' };
+
+    if (otp !== 'SKIP_OTP') {
+      if (account.otpCode !== otp) return { success: false, message: 'Invalid OTP' };
+      if (account.otpExpiry && new Date(account.otpExpiry) < new Date()) {
+        return { success: false, message: 'OTP expired' };
+      }
+    }
+
+    if (newPassword) {
+      setAccounts(prev => prev.map(acc => 
+        acc.email === email ? { ...acc, password: newPassword, otpCode: null, otpExpiry: null, failedAttempts: 0, lockoutUntil: null } : acc
+      ));
+      toast.success("Password reset successfully!");
+      return { success: true };
+    }
+
+    return { success: true };
+  };
+
+  const verifyEmail = (email: string, otp: string) => {
+    const res = verifyOTPAndResetPassword(email, otp);
+    if (res.success) {
+      setAccounts(prev => prev.map(acc => 
+        acc.email === email ? { ...acc, isEmailVerified: true, otpCode: null, otpExpiry: null } : acc
+      ));
+      if (user?.email === email) {
+        setUser(prev => prev ? { ...prev, isEmailVerified: true } : null);
+      }
+      toast.success("Email verified successfully!");
+      return { success: true };
+    }
+    return res;
+  };
+
+  const setInitialPassword = (email: string, password: string) => {
+    setAccounts(prev => prev.map(acc => 
+      acc.email === email ? { ...acc, password } : acc
+    ));
+    toast.success("Password set successfully!");
+    return { success: true };
+  };
+
   const deleteFinishedTasks = () => {
     setTasks(prev => prev.filter(t => t.status !== TaskStatus.COMPLETED));
   };
@@ -469,6 +670,37 @@ export function useChronosStoreInternal() {
   const [timezone, setTimezone] = useState<string>(() => {
     return localStorage.getItem('chronos_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
   });
+
+  const [savedTimezones, setSavedTimezones] = useState<string[]>(() => {
+    const saved = localStorage.getItem('chronos_saved_timezones');
+    return saved ? JSON.parse(saved) : [Intl.DateTimeFormat().resolvedOptions().timeZone];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('chronos_saved_timezones', JSON.stringify(savedTimezones));
+  }, [savedTimezones]);
+
+  const addTimezone = (tz: string) => {
+    if (savedTimezones.includes(tz)) {
+      toast.info("Timezone already saved");
+      return true;
+    }
+    if (savedTimezones.length >= 5) {
+      toast.error("Timezone limit reached (Max 5). Please delete one first.");
+      return false;
+    }
+    setSavedTimezones(prev => [...prev, tz]);
+    toast.success(`Timezone ${tz} added`);
+    return true;
+  };
+
+  const removeTimezone = (tz: string) => {
+    setSavedTimezones(prev => prev.filter(t => t !== tz));
+    if (timezone === tz) {
+      setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    }
+    toast.success(`Timezone ${tz} removed`);
+  };
 
   const [clockType, setClockType] = useState<'analog' | 'digital'>(() => {
     return (localStorage.getItem('chronos_clock_type') as 'analog' | 'digital') || 'digital';
@@ -722,10 +954,10 @@ export function useChronosStoreInternal() {
     logs, addLog,
     draftTask, setDraftTask,
     draftEvent, setDraftEvent,
-    user, accounts, isAuthenticated, login, register, verifyLogin, logout, updateProfile,
+    user, accounts, isAuthenticated, login, register, recoverAccount, verifyLogin, logout, removeAccount, updateProfile, updateUserPlan,
     deleteFinishedTasks, fetchEmails,
     productivityMode, setProductivityMode, getProductivityStats, resetProductivity,
-    timezone, setTimezone,
+    timezone, setTimezone, savedTimezones, addTimezone, removeTimezone,
     clockType, setClockType,
     timeFormat, setTimeFormat,
     workTime, setWorkTime,
@@ -746,7 +978,8 @@ export function useChronosStoreInternal() {
     overdueNotificationsEnabled, setOverdueNotificationsEnabled,
     headerText, setHeaderText,
     changePassword, toggle2SV, verify2SV,
-    timerPlan, setTimerPlan, currentPlanStepIndex, setCurrentPlanStepIndex, startPlan, cancelPlan
+    timerPlan, setTimerPlan, currentPlanStepIndex, setCurrentPlanStepIndex, startPlan, cancelPlan,
+    sendOTP, verifyOTPAndResetPassword, verifyEmail, setInitialPassword
   };
 }
 
