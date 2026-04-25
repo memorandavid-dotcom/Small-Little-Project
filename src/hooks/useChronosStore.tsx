@@ -1035,13 +1035,19 @@ export function useChronosStoreInternal() {
     toast.success("Productivity data reset");
   };
 
+  const addCourse = (course: Course) => setCourses(prev => [...prev, course]);
+  const updateCourse = (id: string, updates: Partial<Course>) => {
+    setCourses(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  };
+  const deleteCourse = (id: string) => setCourses(prev => prev.filter(c => c.id !== id));
+
   return {
     tasks, addTask, updateTask, deleteTask,
     schedule, addScheduleItem, updateScheduleItem, deleteScheduleItem,
     reminders, addReminder, deleteReminder,
     emails, markEmailAsRead, toggleEmailRead, toggleEmailImportant, archiveEmail, deleteEmail,
     goals, setGoals,
-    courses, setCourses,
+    courses, setCourses, addCourse, updateCourse, deleteCourse,
     gradingConfig, setGradingConfig,
     semesterTimeline, setSemesterTimeline,
     billableHours, setBillableHours,

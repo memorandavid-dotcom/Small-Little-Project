@@ -99,6 +99,16 @@ export interface Goal {
   category: string;
 }
 
+export interface Assessment {
+  id: string;
+  name: string;
+  weight: number; // percentage of total grade (0-100)
+  score: number;
+  total: number;
+}
+
+export type CourseStatus = 'draft' | 'final';
+
 export interface Course {
   id: string;
   name: string;
@@ -108,6 +118,10 @@ export interface Course {
   credits: number;
   passingThreshold: number;
   isAlphabetical: boolean;
+  status: CourseStatus;
+  assessments?: Assessment[];
+  startMonth?: string;
+  endMonth?: string;
 }
 
 export interface GradingConfig {

@@ -223,7 +223,7 @@ export default function App() {
     deleteFinishedTasks, fetchEmails, purchaseAddon,
     emails, markEmailAsRead, toggleEmailRead, toggleEmailImportant, archiveEmail, deleteEmail,
     goals, setGoals,
-    courses, setCourses,
+    courses, setCourses, addCourse, updateCourse, deleteCourse,
     gradingConfig, setGradingConfig,
     semesterTimeline, setSemesterTimeline,
     billableHours, setBillableHours,
@@ -363,6 +363,11 @@ export default function App() {
   const [isGradingSetupOpen, setIsGradingSetupOpen] = useState(false);
   const [gradingStep, setGradingStep] = useState(1);
   const [isAnalyzeGradesDialogOpen, setIsAnalyzeGradesDialogOpen] = useState(false);
+  const [isCourseEditorOpen, setIsCourseEditorOpen] = useState(false);
+  const [editingStep, setEditingStep] = useState(1);
+  const [isBulkManagerOpen, setIsBulkManagerOpen] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   
   const [newCourse, setNewCourse] = useState<Partial<Course>>({
     name: '',
@@ -371,7 +376,8 @@ export default function App() {
     grade: 'A',
     percentage: 95,
     passingThreshold: 60,
-    isAlphabetical: true
+    isAlphabetical: true,
+    status: 'draft'
   });
 
   const GRADE_VALS: Record<string, number> = {
@@ -405,6 +411,16 @@ export default function App() {
     return totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : '0.00';
   }, [courses, gradingConfig]);
 
+  const calculateResultGrade = (assessments: any[]) => {
+    const totalWeight = assessments.reduce((acc, a) => acc + (a.weight || 0), 0);
+    if (totalWeight === 0) return 0;
+    const score = assessments.reduce((acc, a) => {
+      const itemScore = (a.score / (a.total || 1)) * (a.weight || 0);
+      return acc + itemScore;
+    }, 0);
+    return (score / totalWeight) * 100;
+  };
+
   const handleAddCourseSequence = (e: React.FormEvent) => {
     e.preventDefault();
     if (courseStep === 1) {
@@ -419,7 +435,8 @@ export default function App() {
         grade: 'A',
         percentage: 95,
         passingThreshold: 60,
-        isAlphabetical: true
+        isAlphabetical: true,
+        status: 'draft'
       }));
     } else if (courseStep === 3) {
       const course: Course = {
@@ -430,7 +447,8 @@ export default function App() {
         grade: newCourse.grade || 'A',
         percentage: newCourse.percentage,
         passingThreshold: newCourse.passingThreshold || 60,
-        isAlphabetical: newCourse.isAlphabetical ?? true
+        isAlphabetical: newCourse.isAlphabetical ?? true,
+        status: 'draft'
       };
       
       const updatedCourses = [...courses, course];
@@ -445,12 +463,12 @@ export default function App() {
             grade: 'A',
             percentage: 95,
             passingThreshold: 60,
-            isAlphabetical: true
+            isAlphabetical: true,
+            status: 'draft'
         });
       } else {
-        setIsAddCourseDialogOpen(false);
-        setCourseStep(1);
-        toast.success("Semester enrollment complete!");
+        toast.success(`Success: ${course.name} enrolled.`);
+        setCourseStep(4); // Move to a "What's Next" step
       }
     }
   };
@@ -4769,6 +4787,13 @@ export default function App() {
                       <div className="flex items-center gap-3">
                         <Button 
                           variant="outline" 
+                          onClick={() => setIsBulkManagerOpen(true)}
+                          className="rounded-2xl h-12 px-6 font-bold flex items-center gap-2 border-[#E9ECEF] hover:bg-gray-50"
+                        >
+                          <LayoutDashboard size={18} /> Manage Bulk
+                        </Button>
+                        <Button 
+                          variant="outline" 
                           onClick={() => setIsGradingSetupOpen(true)}
                           className="rounded-2xl h-12 px-6 font-bold flex items-center gap-2 border-[#E9ECEF]"
                         >
@@ -4809,7 +4834,7 @@ export default function App() {
                           ) : (
                             courses.map(course => {
                               const isPassing = gradingConfig.format === 'alphabetical'
-                                ? (GRADE_VALS[course.grade] || 0) >= (GRADE_VALS[gradingConfig.passingGrade as string] || 0)
+                                ? (course.percentage || 0) >= (gradingConfig.mappings[gradingConfig.passingGrade as string] || 60)
                                 : gradingConfig.isLowerBetter 
                                   ? parseFloat(course.grade) <= parseFloat(gradingConfig.passingGrade as string)
                                   : parseFloat(course.grade) >= parseFloat(gradingConfig.passingGrade as string);
@@ -4823,10 +4848,15 @@ export default function App() {
                                     <div>
                                       <p className="text-[10px] font-bold text-[#868E96] uppercase tracking-widest mb-1">{course.code}</p>
                                       <p className="font-bold text-lg">{course.name}</p>
-                                      <div className="flex items-center gap-3 mt-1">
+                                      <div className="flex items-center gap-2 mt-1">
                                         <Badge variant="outline" className="rounded-lg text-[9px] font-bold opacity-60">
                                           {course.credits} Credits
                                         </Badge>
+                                        {course.startMonth && course.endMonth && (
+                                          <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-none text-[9px] font-bold px-2 py-0.5 rounded-full">
+                                            {course.startMonth} - {course.endMonth}
+                                          </Badge>
+                                        )}
                                         {isPassing ? (
                                           <Badge className="bg-green-500/10 text-green-600 border-none text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                                             <Check size={10} /> PASS
@@ -4839,9 +4869,39 @@ export default function App() {
                                       </div>
                                     </div>
                                   </div>
-                                  <div className="flex flex-col items-end gap-1">
-                                    <span className="text-xs font-bold text-[#868E96] uppercase tracking-widest">Standing</span>
-                                    <span className="text-sm font-black">{course.percentage}%</span>
+                                  <div className="flex flex-col items-end gap-3">
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-8 w-8 rounded-lg text-blue-600 hover:bg-blue-50"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingCourse(course);
+                                          setIsCourseEditorOpen(true);
+                                        }}
+                                      >
+                                        <Edit2 size={14} />
+                                      </Button>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-8 w-8 rounded-lg text-red-600 hover:bg-red-50"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          deleteCourse(course.id);
+                                          toast.success("Course removed from curriculum");
+                                        }}
+                                      >
+                                        <Trash2 size={14} />
+                                      </Button>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="text-xs font-bold text-[#868E96] uppercase tracking-widest block">Standing</span>
+                                      <span className={`text-sm font-black ${course.status === 'final' ? 'text-blue-600' : 'text-amber-500'}`}>
+                                        {course.percentage}% {course.status === 'final' && '(Final)'}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -5696,8 +5756,53 @@ export default function App() {
               </div>
             )}
 
+            {courseStep === 4 && (
+              <div className="py-12 flex flex-col items-center text-center space-y-8">
+                 <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center">
+                    <Check size={40} className="text-green-500" />
+                 </div>
+                 <div>
+                    <h3 className="text-3xl font-black tracking-tight mb-2 uppercase">ENROLLMENT RECORDED</h3>
+                    <p className="text-sm text-[#868E96] font-medium max-w-sm mx-auto">The planned subjects have been successfully added to your curriculum inventory.</p>
+                 </div>
+                 
+                 <div className="grid grid-cols-1 gap-4 w-full px-8">
+                    <Button 
+                      onClick={() => {
+                        setSemesterTimeline({...semesterTimeline, plannedCourseCount: (semesterTimeline.plannedCourseCount || 0) + 1});
+                        setIterativeCourseIndex(iterativeCourseIndex + 1);
+                        setNewCourse({
+                          name: '',
+                          code: '',
+                          credits: 3,
+                          grade: 'A',
+                          percentage: 95,
+                          passingThreshold: 60,
+                          isAlphabetical: true,
+                          status: 'draft'
+                        });
+                        setCourseStep(3);
+                      }}
+                      className="rounded-2xl h-16 bg-[#1A1A1A] text-white font-black text-lg gap-3"
+                    >
+                      <Plus size={20} /> Add Extra Subject
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      onClick={() => {
+                        setIsAddCourseDialogOpen(false);
+                        setCourseStep(1);
+                      }} 
+                      className="rounded-2xl h-16 font-bold text-[#868E96] hover:bg-gray-50 uppercase tracking-widest text-xs"
+                    >
+                      Finalize Curriculum
+                    </Button>
+                 </div>
+              </div>
+            )}
+
             <DialogFooter className="gap-4">
-              {courseStep > 1 && (
+              {courseStep > 1 && courseStep < 4 && (
                 <Button 
                   type="button" 
                   variant="ghost" 
@@ -5707,9 +5812,11 @@ export default function App() {
                   Back
                 </Button>
               )}
-              <Button type="submit" className="flex-1 rounded-2xl h-14 bg-[#1A1A1A] text-white font-black shadow-2xl shadow-black/20 hover:translate-y-[-2px] transition-all">
-                {courseStep === 3 ? (iterativeCourseIndex < (semesterTimeline.plannedCourseCount || 1) - 1 ? 'Next Course' : 'Finish Enrollment') : 'Continue Setup'}
-              </Button>
+              {courseStep < 4 && (
+                <Button type="submit" className="flex-1 rounded-2xl h-14 bg-[#1A1A1A] text-white font-black shadow-2xl shadow-black/20 hover:translate-y-[-2px] transition-all">
+                  {courseStep === 3 ? (iterativeCourseIndex < (semesterTimeline.plannedCourseCount || 1) - 1 ? 'Next Course' : 'Verify & Store') : 'Continue Setup'}
+                </Button>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>
@@ -5778,8 +5885,8 @@ export default function App() {
                             {mode.icon}
                           </div>
                           <div>
-                            <p className="font-bold text-sm text-[#1A1A1A] tracking-tight">{mode.label}</p>
-                            <p className="text-[10px] text-[#868E96] font-bold uppercase tracking-widest leading-none mt-1">{mode.sub}</p>
+                            <p className="font-bold text-xs text-[#1A1A1A] tracking-tighter uppercase">{mode.label}</p>
+                            <p className="text-[9px] text-[#868E96] font-bold uppercase tracking-[0.15em] leading-none mt-1">{mode.sub}</p>
                           </div>
                           {gradingConfig.format === mode.id && <div className="absolute top-4 right-4 w-2 h-2 bg-blue-500 rounded-full" />}
                         </button>
@@ -5918,6 +6025,468 @@ export default function App() {
               </Button>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Manager Dialog */}
+      <Dialog open={isBulkManagerOpen} onOpenChange={setIsBulkManagerOpen}>
+        <DialogContent className="max-w-4xl rounded-[2.5rem] p-8 overflow-hidden flex flex-col bg-white text-[#1A1A1A] max-h-[90vh]">
+          <DialogHeader className="mb-6">
+            <DialogTitle className="text-3xl font-black tracking-tight uppercase">Curriculum Inventory</DialogTitle>
+            <DialogDescription className="text-sm font-medium text-[#868E96]">
+              Review and edit all enrolled subjects in one central view.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+            <div className="space-y-4">
+              {courses.length === 0 ? (
+                <div className="py-20 text-center bg-[#F8F9FA] rounded-[3rem] border-2 border-dashed border-[#E9ECEF]">
+                  <p className="text-[#868E96] font-medium">No subjects found in current curriculum.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="grid grid-cols-12 gap-4 px-6 py-2 text-[10px] font-black uppercase tracking-widest text-[#ADB5BD]">
+                    <div className="col-span-5">Subject Details</div>
+                    <div className="col-span-2 text-center">Credits</div>
+                    <div className="col-span-3 text-center">Current Grade</div>
+                    <div className="col-span-2 text-right">Actions</div>
+                  </div>
+                  {courses.map(course => (
+                    <div key={course.id} className="grid grid-cols-12 gap-4 items-center p-4 bg-[#F8F9FA] rounded-2xl border border-transparent hover:border-blue-100 transition-all">
+                      <div className="col-span-5">
+                        <Input 
+                          value={course.name}
+                          onChange={(e) => updateCourse(course.id, { name: e.target.value })}
+                          className="font-bold border-none bg-transparent h-auto p-0 focus-visible:ring-0 shadow-none"
+                        />
+                        <p className="text-[10px] font-bold text-[#868E96] uppercase tracking-widest mt-1">{course.code}</p>
+                      </div>
+                      <div className="col-span-2 flex justify-center">
+                        <Input 
+                          type="number"
+                          value={course.credits}
+                          onChange={(e) => updateCourse(course.id, { credits: parseInt(e.target.value) || 0 })}
+                          className="w-16 h-10 text-center rounded-xl font-bold bg-white border-[#E9ECEF]"
+                        />
+                      </div>
+                      <div className="col-span-3">
+                          <div className="flex items-center justify-center gap-2">
+                             <Input 
+                                value={course.grade}
+                                onChange={(e) => updateCourse(course.id, { grade: e.target.value })}
+                                className="w-16 h-10 text-center rounded-xl font-black bg-white border-[#E9ECEF]"
+                             />
+                             <div className="text-right">
+                               <p className="text-[9px] font-bold text-[#868E96] uppercase leading-none">Standing</p>
+                               <p className="text-[11px] font-black text-blue-600">{course.percentage}%</p>
+                             </div>
+                          </div>
+                      </div>
+                      <div className="col-span-2 flex justify-end gap-2 text-right">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => {
+                            setEditingCourse(course);
+                            setIsCourseEditorOpen(true);
+                          }}
+                          className="h-10 w-10 rounded-xl text-blue-600 hover:bg-blue-50"
+                        >
+                          <Edit2 size={16} />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => {
+                            deleteCourse(course.id);
+                            toast.success("Subject removed");
+                          }}
+                          className="h-10 w-10 rounded-xl text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="mt-8 pt-6 border-t border-[#F1F3F5]">
+             <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2 text-[#868E96]">
+                   <AlertCircle size={16} />
+                   <p className="text-xs font-medium">Changes are saved automatically to your curriculum.</p>
+                </div>
+                <Button onClick={() => setIsBulkManagerOpen(false)} className="rounded-2xl h-12 px-10 bg-[#1A1A1A] text-white font-bold">
+                  Close Inventory
+                </Button>
+             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Course Editor Dialog - Stepped Wizard */}
+      <Dialog open={isCourseEditorOpen} onOpenChange={(open) => {
+        setIsCourseEditorOpen(open);
+        if (open) setEditingStep(1);
+      }}>
+        <DialogContent className="max-w-4xl rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden flex flex-col md:flex-row bg-white text-[#1A1A1A] h-[90vh] max-h-[800px]">
+          {editingCourse && (
+            <>
+              {/* Sidebar - Progress & Context */}
+              <div className="w-full md:w-80 bg-[#1A1A1A] p-8 text-white shrink-0 flex flex-col">
+                <div className="mb-10">
+                  <div className="flex items-center gap-2 mb-3">
+                    {[1, 2, 3].map((s) => (
+                      <div key={s} className={`h-1 rounded-full transition-all duration-500 ${editingStep >= s ? 'w-6 bg-blue-500' : 'w-2 bg-white/20'}`} />
+                    ))}
+                  </div>
+                  <Badge className="bg-blue-500 text-white border-none px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[9px] mb-3">Editor Prompt {editingStep}</Badge>
+                  <h2 className="text-3xl font-black tracking-tight leading-tight uppercase truncate">{editingCourse.code || "New"}</h2>
+                  <p className="text-xs font-bold text-gray-400 mt-2 uppercase tracking-widest opacity-60">Curriculum Intelligence</p>
+                </div>
+
+                <div className="flex-1 space-y-6">
+                   <div className="p-5 bg-white/5 rounded-3xl border border-white/10 space-y-1">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Active Focus</p>
+                      <h4 className="font-bold text-lg leading-tight truncate">{editingCourse.name}</h4>
+                   </div>
+
+                   <div className="space-y-4">
+                      <div className={`p-4 rounded-2xl border transition-all ${editingStep === 1 ? 'bg-white/10 border-white/20' : 'bg-transparent border-transparent opacity-40'}`}>
+                         <p className="text-[9px] font-black uppercase tracking-widest">Step 1</p>
+                         <p className="font-bold text-sm">Identity & Value</p>
+                      </div>
+                      <div className={`p-4 rounded-2xl border transition-all ${editingStep === 2 ? 'bg-white/10 border-white/20' : 'bg-transparent border-transparent opacity-40'}`}>
+                         <p className="text-[9px] font-black uppercase tracking-widest">Step 2</p>
+                         <p className="font-bold text-sm">Temporal Lifecycle</p>
+                      </div>
+                      <div className={`p-4 rounded-2xl border transition-all ${editingStep === 3 ? 'bg-white/10 border-white/20' : 'bg-transparent border-transparent opacity-40'}`}>
+                         <p className="text-[9px] font-black uppercase tracking-widest">Step 3</p>
+                         <p className="font-bold text-sm">Intelligence Matrix</p>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="mt-8 space-y-3">
+                  {editingStep < 3 ? (
+                    <Button 
+                      onClick={() => setEditingStep(editingStep + 1)}
+                      className="w-full h-14 bg-white text-[#1A1A1A] rounded-2xl font-black hover:bg-gray-100 shadow-xl transition-all"
+                    >
+                      Next Prompt
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={() => {
+                          updateCourse(editingCourse.id, editingCourse);
+                          setIsCourseEditorOpen(false);
+                          toast.success("curriculum updated");
+                      }} 
+                      className="w-full h-14 bg-blue-600 text-white rounded-2xl font-black hover:bg-blue-700 shadow-xl shadow-blue-600/20"
+                    >
+                      Finalize & Record
+                    </Button>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    {editingStep > 1 && (
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => setEditingStep(editingStep - 1)}
+                        className="flex-1 text-gray-400 hover:text-white hover:bg-white/5 h-12 rounded-2xl text-[10px] font-bold uppercase tracking-widest"
+                      >
+                        Previous
+                      </Button>
+                    )}
+                    <Button 
+                      variant="ghost" 
+                      onClick={() => setIsCourseEditorOpen(false)}
+                      className="flex-1 text-red-400 hover:text-red-500 hover:bg-white/5 h-12 rounded-2xl text-[10px] font-bold uppercase tracking-widest"
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Content - Dynamic Prompts */}
+              <div className="flex-1 bg-[#F8F9FA] overflow-y-auto custom-scrollbar flex flex-col">
+                <AnimatePresence mode="wait">
+                  <motion.div 
+                    key={editingStep}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="p-8 md:p-12 flex-1"
+                  >
+                    {editingStep === 1 && (
+                      <div className="space-y-10 max-w-xl">
+                        <div>
+                          <h3 className="text-3xl font-black tracking-tight mb-2">IDENTITY SETUP</h3>
+                          <p className="text-sm text-[#868E96] font-medium">Define the core attributes of this academic subject.</p>
+                        </div>
+                        
+                        <div className="space-y-6">
+                           <div className="grid grid-cols-2 gap-6">
+                              <div className="space-y-2">
+                                <Label className="text-[10px] font-bold uppercase tracking-widest text-[#ADB5BD]">Course Code</Label>
+                                <Input 
+                                  value={editingCourse.code}
+                                  onChange={(e) => setEditingCourse({...editingCourse, code: e.target.value})}
+                                  className="h-14 rounded-2xl border-[#E9ECEF] font-bold text-lg bg-white"
+                                  placeholder="e.g. CS101"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-[10px] font-bold uppercase tracking-widest text-[#ADB5BD]">Value (Credits)</Label>
+                                <Input 
+                                  type="number"
+                                  value={editingCourse.credits}
+                                  onChange={(e) => setEditingCourse({...editingCourse, credits: parseInt(e.target.value) || 0})}
+                                  className="h-14 rounded-2xl border-[#E9ECEF] font-bold text-lg bg-white"
+                                />
+                              </div>
+                           </div>
+                           <div className="space-y-2">
+                             <Label className="text-[10px] font-bold uppercase tracking-widest text-[#ADB5BD]">Full Subject Name</Label>
+                             <Input 
+                               value={editingCourse.name}
+                               onChange={(e) => setEditingCourse({...editingCourse, name: e.target.value})}
+                               className="h-14 rounded-2xl border-[#E9ECEF] font-bold text-lg bg-white"
+                               placeholder="Mathematics & Algorithms"
+                             />
+                           </div>
+
+                           <div className="p-6 bg-white rounded-3xl border border-[#E9ECEF] flex items-center justify-between">
+                              <div className="space-y-1">
+                                <p className="font-bold">Passing Grade</p>
+                                <p className="text-xs text-[#868E96]">Determine the threshold for success</p>
+                              </div>
+                              <Input 
+                                type="number"
+                                value={editingCourse.passingThreshold}
+                                onChange={(e) => setEditingCourse({...editingCourse, passingThreshold: parseInt(e.target.value) || 0})}
+                                className="w-20 h-12 text-center rounded-xl font-black border-[#E9ECEF]"
+                              />
+                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {editingStep === 2 && (
+                      <div className="space-y-10 max-w-xl">
+                        <div>
+                          <h3 className="text-3xl font-black tracking-tight mb-2">LIFECYCLE & SPAN</h3>
+                          <p className="text-sm text-[#868E96] font-medium">Control the scheduling and status of this subject.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-6">
+                           <div className="p-8 bg-[#1A1A1A] rounded-[2rem] text-white space-y-6">
+                              <div className="flex items-center justify-between">
+                                <div className="space-y-1">
+                                  <p className="text-lg font-bold">Enrollment Status</p>
+                                  <p className="text-xs text-gray-400">Finalizing locks the grade into calculation</p>
+                                </div>
+                                <Switch 
+                                  checked={editingCourse.status === 'final'} 
+                                  onCheckedChange={(checked) => setEditingCourse({...editingCourse, status: checked ? 'final' : 'draft'})}
+                                />
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <div className={`px-4 py-2 rounded-xl font-bold uppercase tracking-widest text-[10px] border ${editingCourse.status === 'final' ? 'bg-green-500/20 border-green-500/40 text-green-400' : 'bg-amber-500/20 border-amber-500/40 text-amber-400'}`}>
+                                  {editingCourse.status === 'final' ? 'Finalized' : 'In Progress (Draft)'}
+                                </div>
+                              </div>
+                           </div>
+
+                           <div className="space-y-4">
+                              <Label className="text-[10px] font-bold uppercase tracking-widest text-[#ADB5BD]">Academic Term Boundaries</Label>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <p className="text-xs font-bold text-[#868E96] px-1">Start Month</p>
+                                  <Select 
+                                    value={editingCourse.startMonth} 
+                                    onValueChange={(v) => setEditingCourse({...editingCourse, startMonth: v})}
+                                  >
+                                    <SelectTrigger className="h-14 rounded-2xl border-[#E9ECEF] bg-white font-bold">
+                                      <SelectValue placeholder="Begin" />
+                                    </SelectTrigger>
+                                    <SelectContent className="rounded-2xl border-none shadow-2xl">
+                                      {MONTHS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-2">
+                                  <p className="text-xs font-bold text-[#868E96] px-1">End Month</p>
+                                  <Select 
+                                    value={editingCourse.endMonth} 
+                                    onValueChange={(v) => setEditingCourse({...editingCourse, endMonth: v})}
+                                  >
+                                    <SelectTrigger className="h-14 rounded-2xl border-[#E9ECEF] bg-white font-bold">
+                                      <SelectValue placeholder="End" />
+                                    </SelectTrigger>
+                                    <SelectContent className="rounded-2xl border-none shadow-2xl">
+                                      {MONTHS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {editingStep === 3 && (
+                      <div className="space-y-8">
+                         <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="text-3xl font-black tracking-tight mb-2">INTELLIGENCE MATRIX</h3>
+                              <p className="text-sm text-[#868E96] font-medium">Define granular assessment components.</p>
+                            </div>
+                            <Button 
+                              onClick={() => {
+                                const newAssessment = { id: crypto.randomUUID(), name: 'New Component', weight: 10, score: 0, total: 100 };
+                                setEditingCourse({
+                                  ...editingCourse,
+                                  assessments: [...(editingCourse.assessments || []), newAssessment]
+                                });
+                              }}
+                              className="bg-[#1A1A1A] text-white rounded-2xl font-bold gap-2 px-6 h-12 hover:translate-y-[-2px] transition-all shadow-xl shadow-black/10"
+                            >
+                              <Plus size={16} /> New Record
+                            </Button>
+                         </div>
+
+                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {(editingCourse.assessments || []).length === 0 ? (
+                              <div className="col-span-full py-16 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-[#E9ECEF]">
+                                 <BookOpen size={32} className="text-[#DEE2E6] mb-4 mx-auto" />
+                                 <p className="text-sm text-[#868E96] font-bold uppercase tracking-widest">No Intelligence Data</p>
+                              </div>
+                            ) : (
+                               (editingCourse.assessments || []).map((assessment, index) => (
+                                  <div 
+                                    key={assessment.id}
+                                    className="p-6 bg-white rounded-[2rem] border border-[#E9ECEF] hover:border-blue-200 transition-all shadow-sm flex flex-col gap-4 group"
+                                  >
+                                     <div className="flex items-center justify-between">
+                                        <Input 
+                                          value={assessment.name}
+                                          onChange={(e) => {
+                                            const updated = [...(editingCourse.assessments || [])];
+                                            updated[index].name = e.target.value;
+                                            setEditingCourse({...editingCourse, assessments: updated});
+                                          }}
+                                          className="border-none bg-transparent h-auto p-0 font-black text-lg focus-visible:ring-0 shadow-none placeholder:opacity-30"
+                                          placeholder="Label"
+                                        />
+                                        <Button 
+                                          variant="ghost" 
+                                          size="icon" 
+                                          onClick={() => {
+                                            const updated = (editingCourse.assessments || []).filter(a => a.id !== assessment.id);
+                                            setEditingCourse({...editingCourse, assessments: updated});
+                                          }}
+                                          className="text-red-300 hover:text-red-500 hover:bg-red-50 rounded-xl h-8 w-8"
+                                        >
+                                          <Trash2 size={14} />
+                                        </Button>
+                                     </div>
+                                     <div className="flex items-center gap-6">
+                                        <div className="flex-1 space-y-1">
+                                           <div className="flex items-center justify-between px-1">
+                                              <p className="text-[9px] font-bold text-[#868E96] uppercase tracking-widest">Weighting</p>
+                                              <p className="text-[9px] font-black text-blue-600">{assessment.weight}%</p>
+                                           </div>
+                                           <input 
+                                              type="range"
+                                              min={0}
+                                              max={100}
+                                              step={5}
+                                              value={assessment.weight}
+                                              onChange={(e) => {
+                                                const updated = [...(editingCourse.assessments || [])];
+                                                updated[index].weight = parseInt(e.target.value) || 0;
+                                                setEditingCourse({...editingCourse, assessments: updated});
+                                              }}
+                                              className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                           />
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-[#F8F9FA] px-3 py-2 rounded-xl border border-[#E9ECEF]">
+                                           <input 
+                                              type="number"
+                                              value={assessment.score}
+                                              onChange={(e) => {
+                                                const updated = [...(editingCourse.assessments || [])];
+                                                updated[index].score = parseFloat(e.target.value) || 0;
+                                                setEditingCourse({...editingCourse, assessments: updated});
+                                              }}
+                                              className="w-10 bg-transparent text-center font-black text-sm focus:outline-none"
+                                           />
+                                           <div className="w-[1px] h-4 bg-gray-200" />
+                                           <input 
+                                              type="number"
+                                              value={assessment.total}
+                                              onChange={(e) => {
+                                                const updated = [...(editingCourse.assessments || [])];
+                                                updated[index].total = parseFloat(e.target.value) || 0;
+                                                setEditingCourse({...editingCourse, assessments: updated});
+                                              }}
+                                              className="w-10 bg-transparent text-center font-bold text-sm text-[#868E96] focus:outline-none"
+                                           />
+                                        </div>
+                                     </div>
+                                  </div>
+                               ))
+                            )}
+                         </div>
+
+                         {(editingCourse.assessments || []).length > 0 && (
+                           <div className="p-8 bg-[#1A1A1A] rounded-[2.5rem] text-white flex items-center justify-between shadow-2xl shadow-black/20">
+                              <div className="space-y-1">
+                                 <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Aggregate Standing</p>
+                                 <div className="flex items-baseline gap-2">
+                                    <h2 className="text-4xl font-black">{Math.round(calculateResultGrade(editingCourse.assessments || []))}%</h2>
+                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Weighted Sum</p>
+                                 </div>
+                              </div>
+                              <Button 
+                                onClick={() => {
+                                  const newPercentage = Math.round(calculateResultGrade(editingCourse.assessments || []));
+                                  // Map percentage to grade
+                                  let newGrade = 'F';
+                                  if (gradingConfig.format === 'numerical') {
+                                    newGrade = newPercentage.toString();
+                                  } else {
+                                      const mappings = gradingConfig.mappings || {};
+                                      const sortedGrades = Object.entries(mappings).sort((a,b) => (b[1] as number) - (a[1] as number));
+                                      for (const [g, val] of sortedGrades) {
+                                        if (newPercentage >= (val as number)) {
+                                          newGrade = g;
+                                          break;
+                                        }
+                                      }
+                                  }
+                                  setEditingCourse({...editingCourse, percentage: newPercentage, grade: newGrade});
+                                  toast.success("Intelligence computed");
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white rounded-2xl h-14 px-8 font-black shadow-xl shadow-blue-600/20"
+                              >
+                                Synchronize
+                              </Button>
+                           </div>
+                         )}
+                      </div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
