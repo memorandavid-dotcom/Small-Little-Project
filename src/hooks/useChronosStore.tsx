@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { startOfToday, isAfter } from 'date-fns';
 import { toast } from 'sonner';
-import { Task, ScheduleItem, Reminder, TimeUsageLog, TaskStatus, Email, TimerStep, Goal, Course, BillableHour } from '../types';
+import { Task, ScheduleItem, Reminder, TimeUsageLog, TaskStatus, Email, TimerStep, Goal, Course, BillableHour, GradingConfig, SemesterTimeline } from '../types';
 
 export function useChronosStoreInternal() {
   const [user, setUser] = useState<{ 
@@ -13,7 +13,8 @@ export function useChronosStoreInternal() {
     email: string; 
     avatar: string;
     password?: string;
-    plan?: 'basic' | 'pro' | 'premium' | 'student' | 'enterprise';
+    plan?: 'basic' | 'pro' | 'premium' | 'student' | 'business';
+    purchasedAddons?: string[];
     contactInfo?: string;
     autoDeleteFinishedTasks?: boolean;
     gmailTokens?: any;
@@ -115,6 +116,18 @@ export function useChronosStoreInternal() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [gradingConfig, setGradingConfig] = useState<GradingConfig>(() => {
+    if (!user) return { format: 'alphabetical', highestGrade: 'A', lowestGrade: 'F', passingGrade: 'C', isLowerBetter: false, mappings: { 'A+': 100, 'A': 95, 'A-': 90, 'B+': 85, 'B': 80, 'B-': 75, 'C+': 70, 'C': 65, 'C-': 60, 'D+': 55, 'D': 50, 'F': 0 } };
+    const saved = localStorage.getItem(`chronos_${user.email}_grading`);
+    return saved ? JSON.parse(saved) : { format: 'alphabetical', highestGrade: 'A', lowestGrade: 'F', passingGrade: 'C', isLowerBetter: false, mappings: { 'A+': 100, 'A': 95, 'A-': 90, 'B+': 85, 'B': 80, 'B-': 75, 'C+': 70, 'C': 65, 'C-': 60, 'D+': 55, 'D': 50, 'F': 0 } };
+  });
+
+  const [semesterTimeline, setSemesterTimeline] = useState<SemesterTimeline>(() => {
+    if (!user) return { mode: 'months', durationMonths: 4 };
+    const saved = localStorage.getItem(`chronos_${user.email}_semester`);
+    return saved ? JSON.parse(saved) : { mode: 'months', durationMonths: 4 };
+  });
+
   const [draftTask, setDraftTask] = useState<Partial<Task>>(() => {
     if (!user) return {};
     const saved = localStorage.getItem(`chronos_${user.email}_draft_task`);
@@ -150,6 +163,11 @@ export function useChronosStoreInternal() {
       setGoals(uGoals ? JSON.parse(uGoals) : []);
       setCourses(uCourses ? JSON.parse(uCourses) : []);
       setBillableHours(uBillable ? JSON.parse(uBillable) : []);
+      
+      const uGrading = localStorage.getItem(`chronos_${user.email}_grading`);
+      const uSemester = localStorage.getItem(`chronos_${user.email}_semester`);
+      setGradingConfig(uGrading ? JSON.parse(uGrading) : { format: 'alphabetical', highestGrade: 'A', lowestGrade: 'F', passingGrade: 'C', isLowerBetter: false });
+      setSemesterTimeline(uSemester ? JSON.parse(uSemester) : { mode: 'months', durationMonths: 4 });
 
       if (uEmails) {
         setEmails(JSON.parse(uEmails));
@@ -218,6 +236,18 @@ export function useChronosStoreInternal() {
       localStorage.setItem(`chronos_${user.email}_billable`, JSON.stringify(billableHours));
     }
   }, [billableHours, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_grading`, JSON.stringify(gradingConfig));
+    }
+  }, [gradingConfig, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(`chronos_${user.email}_semester`, JSON.stringify(semesterTimeline));
+    }
+  }, [semesterTimeline, user?.email]);
 
   useEffect(() => {
     if (user) {
@@ -315,6 +345,8 @@ export function useChronosStoreInternal() {
     email: string; 
     avatar: string; 
     password?: string;
+    plan?: 'basic' | 'pro' | 'premium' | 'student' | 'business';
+    purchasedAddons?: string[];
     failedAttempts?: number;
     lockoutUntil?: string | null;
     is2SVEnabled?: boolean;
@@ -351,7 +383,7 @@ export function useChronosStoreInternal() {
     email: string; 
     avatar: string;
     password?: string;
-    plan?: 'basic' | 'pro' | 'premium' | 'student' | 'enterprise';
+    plan?: 'basic' | 'pro' | 'premium' | 'student' | 'business';
     contactInfo?: string;
     autoDeleteFinishedTasks?: boolean;
     gmailTokens?: any;
@@ -509,7 +541,8 @@ export function useChronosStoreInternal() {
     displayName: string;
     email: string; 
     avatar: string;
-    plan: 'basic' | 'pro' | 'premium' | 'student' | 'enterprise';
+    plan: 'basic' | 'pro' | 'premium' | 'student' | 'business';
+    purchasedAddons: string[];
     contactInfo: string;
     autoDeleteFinishedTasks: boolean;
     gmailTokens: any;
@@ -527,7 +560,7 @@ export function useChronosStoreInternal() {
     });
   };
 
-  const updateUserPlan = (email: string, plan: 'basic' | 'pro' | 'premium' | 'student' | 'enterprise') => {
+  const updateUserPlan = (email: string, plan: 'basic' | 'pro' | 'premium' | 'student' | 'business') => {
     setAccounts(prev => prev.map(acc => acc.email === email ? { ...acc, plan } : acc));
     if (user?.email === email) {
       setUser(prev => prev ? { ...prev, plan } : null);
@@ -540,6 +573,17 @@ export function useChronosStoreInternal() {
       const updated = globalAccounts.map(acc => acc.email === email ? { ...acc, plan } : acc);
       localStorage.setItem('chronos_global_accounts', JSON.stringify(updated));
     }
+  };
+
+  const purchaseAddon = (addonId: string) => {
+    if (!user) return;
+    const currentAddons = user.purchasedAddons || [];
+    if (currentAddons.includes(addonId)) {
+      toast.error("Add-on already purchased!");
+      return;
+    }
+    updateProfile({ purchasedAddons: [...currentAddons, addonId] });
+    toast.success(`Add-on "${addonId}" successfully purchased!`);
   };
 
   const changePassword = (oldPassword: string, newPassword: string) => {
@@ -998,12 +1042,14 @@ export function useChronosStoreInternal() {
     emails, markEmailAsRead, toggleEmailRead, toggleEmailImportant, archiveEmail, deleteEmail,
     goals, setGoals,
     courses, setCourses,
+    gradingConfig, setGradingConfig,
+    semesterTimeline, setSemesterTimeline,
     billableHours, setBillableHours,
     logs, addLog,
     draftTask, setDraftTask,
     draftEvent, setDraftEvent,
     user, accounts, isAuthenticated, login, register, recoverAccount, verifyLogin, logout, removeAccount, updateProfile, updateUserPlan,
-    deleteFinishedTasks, fetchEmails,
+    deleteFinishedTasks, fetchEmails, purchaseAddon,
     productivityMode, setProductivityMode, getProductivityStats, resetProductivity,
     timezone, setTimezone, savedTimezones, addTimezone, removeTimezone,
     clockType, setClockType,

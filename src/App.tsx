@@ -40,12 +40,13 @@ import {
   X,
   Lock,
   Upload,
+  Download,
   Maximize2,
   ShieldCheck
 } from 'lucide-react';
 import { useChronosStore } from './hooks/useChronosStore';
 import { geminiService } from './services/geminiService';
-import { Task, TaskStatus, ScheduleItem, Reminder, Email } from './types';
+import { Task, TaskStatus, ScheduleItem, Reminder, Email, Course } from './types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -79,6 +80,7 @@ import {
 } from "@/components/ui/popover";
 import { 
   format, 
+  isValid,
   isAfter, 
   isBefore, 
   addHours, 
@@ -114,64 +116,85 @@ const PREDEFINED_AVATARS = [
   "https://picsum.photos/seed/avatar8/200/200",
 ];
 
+const PLAN_PRICING: Record<string, number> = {
+  'basic': 0,
+  'student': 5.99,
+  'pro': 9.99,
+  'premium': 21.99,
+  'business': 28.00
+};
+
 const PLAN_HIERARCHY: Record<string, number> = {
   'basic': 0,
   'student': 1,
   'pro': 2,
   'premium': 3,
-  'enterprise': 4
+  'business': 4
 };
 
 const PlanGuard = ({ 
   plan, 
   userPlan, 
+  userAddons = [],
   children, 
-  label, 
-  onNavigate 
+  label,
+  addonId,
+  onNavigate,
+  onPurchaseAddon
 }: { 
   plan: string, 
   userPlan: string, 
+  userAddons?: string[],
   children: React.ReactNode, 
   label: string,
-  onNavigate: (tab: string) => void
+  addonId?: string,
+  onNavigate: (tab: string) => void,
+  onPurchaseAddon?: (id: string, price: number) => void
 }) => {
-  const isLocked = (PLAN_HIERARCHY[userPlan] || 0) < (PLAN_HIERARCHY[plan] || 0);
+  const isUnlockedByPlan = (PLAN_HIERARCHY[userPlan] || 0) >= (PLAN_HIERARCHY[plan] || 0);
+  const isUnlockedByAddon = addonId ? userAddons.includes(addonId) : false;
+  const isLocked = !isUnlockedByPlan && !isUnlockedByAddon;
 
   if (isLocked) {
+    const planGap = (PLAN_PRICING[plan] || 0) - (PLAN_PRICING[userPlan] || 0);
+    const addonPrice = Math.max(0.99, Math.round(planGap * 0.3 * 100) / 100);
+
     return (
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6"
+        className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6 bg-[#F8F9FA]/50 rounded-[3rem] border-2 border-dashed border-[#E9ECEF] p-12"
       >
-        <div className="w-24 h-24 bg-[#1A1A1A] text-white rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-black/20 relative overflow-hidden group">
-          <Lock size={40} className="relative z-10" />
-          <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="w-24 h-24 bg-white border border-[#E9ECEF] text-[#1A1A1A] rounded-[2.5rem] flex items-center justify-center shadow-xl relative overflow-hidden group">
+          <Lock size={40} className="relative z-10 opacity-40" />
+          <div className="absolute inset-0 bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
-        <div>
-          <Badge className="bg-blue-50 text-blue-600 border-none px-4 py-1.5 rounded-full font-bold uppercase tracking-widest text-[10px] mb-4">
-            Premium Feature
+        <div className="space-y-2">
+          <Badge className="bg-gray-200 text-gray-600 border-none px-4 py-1.5 rounded-full font-bold uppercase tracking-widest text-[10px]">
+            Locked Feature
           </Badge>
-          <h2 className="text-4xl font-bold tracking-tighter">Plan Restricted</h2>
+          <h2 className="text-4xl font-bold tracking-tighter grayscale italic text-gray-400">Exclusive Content</h2>
           <p className="text-[#868E96] mt-4 max-w-md mx-auto leading-relaxed font-medium">
-            The <span className="text-[#1A1A1A] font-bold">{label}</span> is part of our {plan.toUpperCase()} toolkit. 
-            Elevate your productivity and unlock professional features today.
+            The <span className="text-[#1A1A1A] font-bold underline decoration-blue-500/30">{label}</span> is part of our {plan.toUpperCase()} toolkit. 
+            Choose how you want to unlock this power.
           </p>
         </div>
-        <div className="flex items-center gap-4 pt-4">
-          <Button 
-            onClick={() => onNavigate('settings')}
-            className="rounded-2xl h-14 px-10 bg-[#1A1A1A] text-white font-bold shadow-xl shadow-black/10 hover:scale-105 active:scale-95 transition-all"
-          >
-            View Membership Plans
-          </Button>
-          <Button 
-            variant="outline"
-            onClick={() => onNavigate('dashboard')}
-            className="rounded-2xl h-14 px-8 border-[#E9ECEF] font-bold hover:bg-[#F8F9FA]"
-          >
-            Return Home
-          </Button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-xl pt-4">
+          <Card className="p-6 rounded-[2rem] border-none shadow-sm hover:shadow-md transition-shadow cursor-pointer group" onClick={() => onNavigate('settings')}>
+            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-[0.2em] mb-4">Full Access</p>
+            <h4 className="text-lg font-bold mb-2 tracking-tight group-hover:text-blue-600 transition-colors">Upgrade to {plan.toUpperCase()}</h4>
+            <p className="text-xs text-[#868E96] font-medium mb-6">Unlock all features in current and higher tiers instantly.</p>
+            <Button className="w-full rounded-xl bg-[#1A1A1A] text-white font-bold h-12">Upgrade Plan</Button>
+          </Card>
+          
+          {addonId && (
+            <Card className="p-6 rounded-[2rem] border-none shadow-sm hover:shadow-md transition-shadow cursor-pointer group" onClick={() => onPurchaseAddon?.(addonId, addonPrice)}>
+              <p className="text-[10px] font-bold text-purple-600 uppercase tracking-[0.2em] mb-4">A La Carte</p>
+              <h4 className="text-lg font-bold mb-2 tracking-tight group-hover:text-purple-600 transition-colors">Buy Individual Add-On</h4>
+              <p className="text-xs text-[#868E96] font-medium mb-6">Keep your plan and add just this feature for <span className="font-bold text-purple-600">${addonPrice.toFixed(2)}</span>.</p>
+              <Button variant="outline" className="w-full rounded-xl border-purple-200 text-purple-600 font-bold h-12 hover:bg-purple-50">Add to Plan</Button>
+            </Card>
+          )}
         </div>
       </motion.div>
     );
@@ -197,10 +220,12 @@ export default function App() {
     draftTask, setDraftTask,
     draftEvent, setDraftEvent,
     user, accounts, isAuthenticated, login, register, recoverAccount, verifyLogin, logout, updateProfile,
-    deleteFinishedTasks, fetchEmails,
+    deleteFinishedTasks, fetchEmails, purchaseAddon,
     emails, markEmailAsRead, toggleEmailRead, toggleEmailImportant, archiveEmail, deleteEmail,
     goals, setGoals,
     courses, setCourses,
+    gradingConfig, setGradingConfig,
+    semesterTimeline, setSemesterTimeline,
     billableHours, setBillableHours,
     productivityMode, setProductivityMode, getProductivityStats, resetProductivity,
     timezone, setTimezone, savedTimezones, addTimezone, removeTimezone,
@@ -211,6 +236,15 @@ export default function App() {
     changePassword, toggle2SV, verify2SV,
     sendOTP, verifyOTPAndResetPassword, verifyEmail, setInitialPassword, removeAccount, updateUserPlan
   } = useChronosStore();
+
+  const handlePurchaseAddonAction = (id: string, price: number) => {
+    toast(`Unlock "${id.replace('_', ' ')}" for $${price.toFixed(2)}?`, {
+      action: {
+        label: 'Purchase',
+        onClick: () => purchaseAddon(id)
+      },
+    });
+  };
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -246,8 +280,9 @@ export default function App() {
   const [editPlan, setEditPlan] = useState(user?.plan || 'pro');
   const [isZoomOpen, setIsZoomOpen] = useState(false);
   const [isAvatarSelectOpen, setIsAvatarSelectOpen] = useState(false);
+  const [settingsSubTab, setSettingsSubTab] = useState<'profile' | 'productivity' | 'security' | 'notifications'>('profile');
   const [isPlanConfirmOpen, setIsPlanConfirmOpen] = useState(false);
-  const [pendingPlan, setPendingPlan] = useState<'basic' | 'student' | 'pro' | 'premium' | 'enterprise' | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<'basic' | 'student' | 'pro' | 'premium' | 'business' | null>(null);
   
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [isTimezoneDialogOpen, setIsTimezoneDialogOpen] = useState(false);
@@ -262,7 +297,7 @@ export default function App() {
     'student': 3,
     'pro': 3,
     'premium': 4,
-    'enterprise': 10
+    'business': 10
   };
 
   const tzLimit = PLAN_TIMEZONE_LIMITS[user?.plan || 'basic'] || 2;
@@ -281,7 +316,7 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedAccountForLogin, setSelectedAccountForLogin] = useState<{ email: string; name: string; avatar: string } | null>(null);
   
-  const [selectedPlanForPreview, setSelectedPlanForPreview] = useState<'basic' | 'pro' | 'premium'>('basic');
+  const [selectedPlanForPreview, setSelectedPlanForPreview] = useState<'basic' | 'student' | 'pro' | 'premium' | 'business'>('basic');
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -320,6 +355,105 @@ export default function App() {
   const [confirmSetupPassword, setConfirmSetupPassword] = useState('');
   const [isRecoveryConfirmOpen, setIsRecoveryConfirmOpen] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
+
+  const [isAddCourseDialogOpen, setIsAddCourseDialogOpen] = useState(false);
+  const [courseStep, setCourseStep] = useState(1); // 1: Duration, 2: Volume, 3: Iterative Entry
+  const [iterativeCourseIndex, setIterativeCourseIndex] = useState(0);
+  const [tempCourses, setTempCourses] = useState<Partial<Course>[]>([]);
+  const [isGradingSetupOpen, setIsGradingSetupOpen] = useState(false);
+  const [gradingStep, setGradingStep] = useState(1);
+  const [isAnalyzeGradesDialogOpen, setIsAnalyzeGradesDialogOpen] = useState(false);
+  
+  const [newCourse, setNewCourse] = useState<Partial<Course>>({
+    name: '',
+    code: '',
+    credits: 3,
+    grade: 'A',
+    percentage: 95,
+    passingThreshold: 60,
+    isAlphabetical: true
+  });
+
+  const GRADE_VALS: Record<string, number> = {
+    'A+': 4.0, 'A': 4.0, 'A-': 3.7,
+    'B+': 3.3, 'B': 3.0, 'B-': 2.7,
+    'C+': 2.3, 'C': 2.0, 'C-': 1.7,
+    'D+': 1.3, 'D': 1.0, 'F': 0.0
+  };
+
+  const calculatedGPA = useMemo(() => {
+    if (courses.length === 0) return '0.00';
+    
+    if (gradingConfig.format === 'numerical') {
+      const avg = courses.reduce((acc, c) => acc + (parseFloat(c.grade) || 0), 0) / courses.length;
+      return avg.toFixed(2);
+    }
+    
+    // Alphabetical mode using mappings or default GRADE_VALS
+    // Mapping: Letter -> Percentage Weight
+    const totalPoints = courses.reduce((acc, course) => {
+      let weight = 0;
+      if (gradingConfig.mappings && gradingConfig.mappings[course.grade] !== undefined) {
+        weight = gradingConfig.mappings[course.grade] / 25; // Simple conversion to 4.0 scale if 100%
+      } else {
+        weight = GRADE_VALS[course.grade] || 0;
+      }
+      return acc + (weight * course.credits);
+    }, 0);
+    
+    const totalCredits = courses.reduce((acc, course) => acc + course.credits, 0);
+    return totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : '0.00';
+  }, [courses, gradingConfig]);
+
+  const handleAddCourseSequence = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (courseStep === 1) {
+      setCourseStep(2);
+    } else if (courseStep === 2) {
+      setCourseStep(3);
+      setIterativeCourseIndex(0);
+      setTempCourses(Array(semesterTimeline.plannedCourseCount || 1).fill({
+        name: '',
+        code: '',
+        credits: 3,
+        grade: 'A',
+        percentage: 95,
+        passingThreshold: 60,
+        isAlphabetical: true
+      }));
+    } else if (courseStep === 3) {
+      const course: Course = {
+        id: crypto.randomUUID(),
+        name: newCourse.name || `Course ${iterativeCourseIndex + 1}`,
+        code: newCourse.code || `C${iterativeCourseIndex + 1}`,
+        credits: newCourse.credits || 3,
+        grade: newCourse.grade || 'A',
+        percentage: newCourse.percentage,
+        passingThreshold: newCourse.passingThreshold || 60,
+        isAlphabetical: newCourse.isAlphabetical ?? true
+      };
+      
+      const updatedCourses = [...courses, course];
+      setCourses(updatedCourses);
+
+      if (iterativeCourseIndex < (semesterTimeline.plannedCourseCount || 1) - 1) {
+        setIterativeCourseIndex(iterativeCourseIndex + 1);
+        setNewCourse({
+            name: '',
+            code: '',
+            credits: 3,
+            grade: 'A',
+            percentage: 95,
+            passingThreshold: 60,
+            isAlphabetical: true
+        });
+      } else {
+        setIsAddCourseDialogOpen(false);
+        setCourseStep(1);
+        toast.success("Semester enrollment complete!");
+      }
+    }
+  };
 
   const handleScroll = () => {
     if (scrollTimeoutRef.current) {
@@ -429,6 +563,32 @@ export default function App() {
   }, [tasks, schedule]);
 
   const productivity = getProductivityStats();
+
+  const academicStats = useMemo(() => {
+    const focusTime = logs.filter(l => l.activity.toLowerCase().includes('focus') || l.activity.toLowerCase().includes('work')).length;
+    const reviewTime = logs.filter(l => (l.activity.toLowerCase().includes('review'))).length;
+    const breakTime = logs.filter(l => (l.activity.toLowerCase().includes('break'))).length;
+    
+    // Performance Bar: Consistency in maintaining good grade
+    const passingCount = courses.filter(c => {
+      if (gradingConfig.format === 'alphabetical') {
+        return (GRADE_VALS[c.grade] || 0) >= (GRADE_VALS[gradingConfig.passingGrade as string] || 0);
+      }
+      const g = parseFloat(c.grade);
+      const p = parseFloat(gradingConfig.passingGrade as string);
+      return gradingConfig.isLowerBetter ? g <= p : g >= p;
+    }).length;
+    
+    const performance = courses.length > 0 ? Math.round((passingCount / courses.length) * 100) : 0;
+    
+    // Consistency Score: Balance and session count
+    const totalSessions = focusTime + reviewTime + breakTime;
+    const focusRatio = totalSessions > 0 ? (focusTime / totalSessions) : 0;
+    const balance = totalSessions > 0 ? 100 - Math.abs(focusRatio * 100 - 60) : 0; 
+    const consistencyScore = Math.min(100, Math.round((totalSessions * 5) + balance));
+    
+    return { focusTime, reviewTime, breakTime, performance, consistencyScore, totalSessions };
+  }, [logs, courses, gradingConfig, GRADE_VALS]);
 
   // Check for reminders and deadlines
   useEffect(() => {
@@ -1091,7 +1251,7 @@ export default function App() {
                {!isConfirmingPayment ? (
                  <>
                   <div className="flex gap-1.5 p-1 bg-[#F1F3F5] rounded-[2rem] mb-2 overflow-x-auto no-scrollbar scroll-smooth">
-                    {['basic', 'student', 'pro', 'premium', 'enterprise'].map((p) => (
+                    {['basic', 'student', 'pro', 'premium', 'business'].map((p) => (
                       <button
                         key={p}
                         onClick={() => setSelectedPlanForPreview(p as any)}
@@ -1112,9 +1272,9 @@ export default function App() {
                         <div className="text-right">
                           <p className="text-2xl font-bold">
                             {selectedPlanForPreview === 'basic' ? 'Free' : 
-                             selectedPlanForPreview === 'pro' ? '$8.99' : 
-                             selectedPlanForPreview === 'premium' ? '$19.99' : 
-                             selectedPlanForPreview === 'student' ? '$4.99' : '$25'}
+                             selectedPlanForPreview === 'pro' ? '$9.99' : 
+                             selectedPlanForPreview === 'premium' ? '$21.99' : 
+                             selectedPlanForPreview === 'student' ? '$5.99' : '$28.00'}
                           </p>
                           <p className="text-[10px] text-[#ADB5BD] font-bold uppercase tracking-widest">per month</p>
                         </div>
@@ -1174,9 +1334,9 @@ export default function App() {
                      <h3 className="text-xl font-bold tracking-tight mb-2">Confirm Payment</h3>
                      <p className="text-sm text-blue-900/70 font-medium px-4 leading-relaxed">
                        Are you sure you want to pay <span className="text-blue-600 font-bold">
-                         {selectedPlanForPreview === 'pro' ? '$8.99' : 
-                          selectedPlanForPreview === 'premium' ? '$19.99' : 
-                          selectedPlanForPreview === 'student' ? '$4.99' : '$25'}
+                         {selectedPlanForPreview === 'pro' ? '$9.99' : 
+                          selectedPlanForPreview === 'premium' ? '$21.99' : 
+                          selectedPlanForPreview === 'student' ? '$5.99' : '$28.00'}
                        </span> and continue with the <span className="text-blue-600 font-bold uppercase">{selectedPlanForPreview}</span> plan?
                      </p>
                    </div>
@@ -1193,9 +1353,9 @@ export default function App() {
                       <div className="pt-3 border-t border-[#E9ECEF] flex justify-between items-center">
                         <span className="font-bold text-[#1A1A1A]">Total Due Today</span>
                         <span className="text-xl font-bold text-[#1A1A1A]">
-                          {selectedPlanForPreview === 'pro' ? '$8.99' : 
-                           selectedPlanForPreview === 'premium' ? '$19.99' : 
-                           selectedPlanForPreview === 'student' ? '$4.99' : '$25.00'}
+                          {selectedPlanForPreview === 'pro' ? '$9.99' : 
+                           selectedPlanForPreview === 'premium' ? '$21.99' : 
+                           selectedPlanForPreview === 'student' ? '$5.99' : '$28.00'}
                         </span>
                       </div>
                    </div>
@@ -1557,18 +1717,20 @@ export default function App() {
                   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
                   { id: 'tasks', icon: CheckCircle2, label: 'Tasks & Projects' },
                   { id: 'schedule', icon: Calendar, label: 'Schedule' },
-                  { id: 'emails', icon: Mail, label: 'Email Center', plan: 'pro' },
-                  { id: 'focus', icon: Timer, label: 'Focus Timer', plan: 'pro' },
-                  { id: 'productivity', icon: BarChart3, label: 'Statistics', plan: 'pro' },
-                  { id: 'ai', icon: MessageSquare, label: 'Team AI', plan: 'premium' },
-                  { id: 'goals', icon: Target, label: 'Goal Tracking', plan: 'premium' },
-                  { id: 'academic', icon: BookOpen, label: 'Academic Hub', plan: 'student' },
-                  { id: 'teams', icon: ShieldCheck, label: 'Team Sync', plan: 'enterprise' },
+                  { id: 'emails', icon: Mail, label: 'Email Center', plan: 'pro', addonId: 'advanced_mail' },
+                  { id: 'focus', icon: Timer, label: 'Focus Timer', plan: 'pro', addonId: 'focus_tools' },
+                  { id: 'productivity', icon: BarChart3, label: 'Statistics', plan: 'pro', addonId: 'advanced_stats' },
+                  { id: 'ai', icon: MessageSquare, label: 'Team AI', plan: 'premium', addonId: 'ai_scheduling' },
+                  { id: 'goals', icon: Target, label: 'Goal Tracking', plan: 'premium', addonId: 'goal_tracker' },
+                  { id: 'academic', icon: BookOpen, label: 'Academic Hub', plan: 'student', addonId: 'academic_suite' },
+                  { id: 'teams', icon: ShieldCheck, label: 'Team Sync', plan: 'business', addonId: 'business_sync' },
                   { id: 'settings', icon: Settings, label: 'Settings' },
                 ].filter(item => {
                   if (!item.plan) return true;
                   const currentPlan = user?.plan || 'basic';
-                  return (PLAN_HIERARCHY[currentPlan] || 0) >= (PLAN_HIERARCHY[item.plan] || 0);
+                  const hasPlanAccess = (PLAN_HIERARCHY[currentPlan] || 0) >= (PLAN_HIERARCHY[item.plan] || 0);
+                  const hasAddonAccess = item.addonId && user?.purchasedAddons?.includes(item.addonId);
+                  return hasPlanAccess || hasAddonAccess;
                 }).map((item) => {
                   return (
                     <button
@@ -1636,18 +1798,20 @@ export default function App() {
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
             { id: 'tasks', icon: CheckCircle2, label: 'Tasks & Projects' },
             { id: 'schedule', icon: Calendar, label: 'Schedule' },
-            { id: 'emails', icon: Mail, label: 'Mail Center', plan: 'pro' },
-            { id: 'focus', icon: Timer, label: 'Focus Timer', plan: 'pro' },
-            { id: 'productivity', icon: BarChart3, label: 'Statistics', plan: 'pro' },
-            { id: 'ai', icon: MessageSquare, label: 'Team AI', plan: 'premium' },
-            { id: 'goals', icon: Target, label: 'Goal Tracking', plan: 'premium' },
-            { id: 'academic', icon: BookOpen, label: 'Academic Hub', plan: 'student' },
-            { id: 'teams', icon: ShieldCheck, label: 'Team Sync', plan: 'enterprise' },
+            { id: 'emails', icon: Mail, label: 'Mail Center', plan: 'pro', addonId: 'advanced_mail' },
+            { id: 'focus', icon: Timer, label: 'Focus Timer', plan: 'pro', addonId: 'focus_tools' },
+            { id: 'productivity', icon: BarChart3, label: 'Statistics', plan: 'pro', addonId: 'advanced_stats' },
+            { id: 'ai', icon: MessageSquare, label: 'Team AI', plan: 'premium', addonId: 'ai_scheduling' },
+            { id: 'goals', icon: Target, label: 'Goal Tracking', plan: 'premium', addonId: 'goal_tracker' },
+            { id: 'academic', icon: BookOpen, label: 'Academic Hub', plan: 'student', addonId: 'academic_suite' },
+            { id: 'teams', icon: ShieldCheck, label: 'Team Sync', plan: 'business', addonId: 'business_sync' },
             { id: 'settings', icon: Settings, label: 'Settings' },
           ].filter(item => {
             if (!item.plan) return true;
             const currentPlan = user?.plan || 'basic';
-            return (PLAN_HIERARCHY[currentPlan] || 0) >= (PLAN_HIERARCHY[item.plan] || 0);
+            const hasPlanAccess = (PLAN_HIERARCHY[currentPlan] || 0) >= (PLAN_HIERARCHY[item.plan] || 0);
+            const hasAddonAccess = item.addonId && user?.purchasedAddons?.includes(item.addonId);
+            return hasPlanAccess || hasAddonAccess;
           }).map((item) => {
             return (
               <button
@@ -1906,344 +2070,409 @@ export default function App() {
                   exit={{ opacity: 0, y: -10 }}
                   className="max-w-4xl mx-auto space-y-10"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div>
-                      <h3 className="text-4xl font-bold tracking-tighter">Profile Settings</h3>
-                      <p className="text-[#868E96] font-medium mt-1">Manage your account and preferences</p>
+                      <h3 className="text-4xl font-bold tracking-tighter">System Console</h3>
+                      <p className="text-[#868E96] font-medium mt-1">Configure your Chronos experience</p>
                     </div>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => {
-                        logout();
-                        setSelectedAccountForLogin(null);
-                        setLoginView('select');
-                      }}
-                      className="rounded-2xl px-6 h-12 font-bold flex items-center gap-2 text-red-500 hover:text-red-600 hover:bg-red-50"
-                    >
-                      <LogOut size={18} />
-                      Log Out
-                    </Button>
+                    <div className="flex bg-[#F1F3F5] p-1 rounded-[2rem] shadow-inner self-start md:self-center">
+                      <button 
+                        onClick={() => setSettingsSubTab('profile')}
+                        className={`flex items-center gap-2 px-6 py-2.5 rounded-[1.5rem] text-xs font-bold uppercase tracking-widest transition-all ${settingsSubTab === 'profile' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
+                      >
+                        <User size={14} /> Profile
+                      </button>
+                      <button 
+                        onClick={() => setSettingsSubTab('productivity')}
+                        className={`flex items-center gap-2 px-6 py-2.5 rounded-[1.5rem] text-xs font-bold uppercase tracking-widest transition-all ${settingsSubTab === 'productivity' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
+                      >
+                        <Zap size={14} className={settingsSubTab === 'productivity' ? 'text-blue-600' : ''} /> Core Hub
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                    <div className="md:col-span-1 space-y-6">
-                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 text-center">
-                        <div className="relative w-32 h-32 mx-auto mb-6 group">
-                          <div 
-                            className="w-full h-full rounded-[2.5rem] overflow-hidden shadow-xl cursor-pointer"
-                            onClick={() => setIsZoomOpen(true)}
-                          >
-                            <img 
-                              src={user?.avatar} 
-                              alt="Profile" 
-                              className="w-full h-full object-cover transition-transform group-hover:scale-110"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Maximize2 className="text-white w-6 h-6" />
-                            </div>
-                          </div>
-                          <button 
-                            onClick={() => setIsAvatarSelectOpen(true)}
-                            className="absolute bottom-0 right-0 w-10 h-10 bg-[#1A1A1A] text-white rounded-2xl flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
-                          >
-                            <Camera size={18} />
-                          </button>
-                        </div>
-                        <h4 className="font-bold text-xl">{user?.displayName || user?.name}</h4>
-                        <p className="text-sm text-[#868E96] mb-6">{user?.email}</p>
-                        
-                        <div className="space-y-4">
-                          <div className="space-y-3">
-                            <Label className="text-[10px] font-bold uppercase tracking-widest text-[#868E96]">Current Plan</Label>
-                            <Select value={editPlan} onValueChange={(val: any) => {
-                              if (val === editPlan) return;
-                              setPendingPlan(val);
-                              setIsPlanConfirmOpen(true);
-                            }}>
-                              <SelectTrigger className="rounded-2xl h-16 border-[#E9ECEF] font-bold uppercase text-xs px-6 shadow-sm hover:border-[#1A1A1A] transition-all">
-                                <SelectValue placeholder="SELECT PLAN" />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-2xl border-[#E9ECEF] p-1.5 min-w-[260px]">
-                                <SelectItem value="basic" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
-                                  BASIC PLAN — FREE
-                                </SelectItem>
-                                <SelectItem value="student" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
-                                  STUDENT — $4.99 / MONTH
-                                </SelectItem>
-                                <SelectItem value="pro" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
-                                  PRO PLAN — $8.99 / MONTH
-                                </SelectItem>
-                                <SelectItem value="premium" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
-                                  PREMIUM — $19.99 / MONTH
-                                </SelectItem>
-                                <SelectItem value="enterprise" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
-                                  ENTERPRISE — $25.00 / MONTH
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </Card>
-                    </div>
-
-                    <div className="md:col-span-2 space-y-8">
-                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
-                        <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
-                          <User size={20} className="text-blue-600" />
-                          Personal Information
-                        </h4>
-                        <div className="space-y-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-2">
-                              <Label htmlFor="firstName" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">First Name</Label>
-                              <Input 
-                                id="firstName" 
-                                value={editFirstName} 
-                                onChange={(e) => setEditFirstName(e.target.value)}
-                                className="rounded-xl h-12 border-[#E9ECEF] focus:ring-blue-500"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="lastName" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Last Name</Label>
-                              <Input 
-                                id="lastName" 
-                                value={editLastName} 
-                                onChange={(e) => setEditLastName(e.target.value)}
-                                className="rounded-xl h-12 border-[#E9ECEF] focus:ring-blue-500"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label htmlFor="displayName" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Display Name (Max 12 chars)</Label>
-                            <Input 
-                              id="displayName" 
-                              value={editDisplayName} 
-                              onChange={(e) => {
-                                if (e.target.value.length <= 12) {
-                                  setEditDisplayName(e.target.value);
-                                }
-                              }}
-                              className="rounded-xl h-12 border-[#E9ECEF] focus:ring-blue-500"
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Email Address</Label>
-                            <Input 
-                              id="email" 
-                              value={user?.email} 
-                              disabled
-                              className="rounded-xl h-12 border-[#E9ECEF] bg-[#F8F9FA] text-[#ADB5BD]"
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="contactInfo" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Contact Information</Label>
-                            <Input 
-                              id="contactInfo" 
-                              value={editContactInfo} 
-                              onChange={(e) => setEditContactInfo(e.target.value)}
-                              placeholder="Phone number or other contact"
-                              className="rounded-xl h-12 border-[#E9ECEF] focus:ring-blue-500"
-                            />
-                          </div>
-
-                          <Button 
-                            onClick={() => {
-                              updateProfile({ 
-                                firstName: editFirstName,
-                                lastName: editLastName,
-                                displayName: editDisplayName,
-                                contactInfo: editContactInfo,
-                                name: `${editFirstName} ${editLastName}`.trim() || user?.name
-                              });
-                              toast.success("Profile updated successfully!");
-                            }}
-                            className="w-full bg-[#1A1A1A] text-white rounded-xl px-6 h-12 font-bold"
-                          >
-                            Save Changes
-                          </Button>
-                        </div>
-                      </Card>
-
-                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
-                        <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
-                          <Shield size={20} className="text-green-600" />
-                          Account Security
-                        </h4>
-                        <div className="space-y-6">
-                          <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
-                            <div className="flex items-center gap-4">
-                              <div className="p-3 bg-white rounded-xl shadow-sm">
-                                <Mail size={20} className="text-[#495057]" />
+                  <AnimatePresence mode="wait">
+                    {settingsSubTab === 'profile' && (
+                      <motion.div
+                        key="profile-tab"
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                        className="grid grid-cols-1 md:grid-cols-3 gap-10"
+                      >
+                        <div className="md:col-span-1 space-y-6">
+                          <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 text-center">
+                            <div className="relative w-32 h-32 mx-auto mb-6 group">
+                              <div 
+                                className="w-full h-full rounded-[2.5rem] overflow-hidden shadow-xl cursor-pointer"
+                                onClick={() => setIsZoomOpen(true)}
+                              >
+                                <img 
+                                  src={user?.avatar} 
+                                  alt="Profile" 
+                                  className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <Maximize2 className="text-white w-6 h-6" />
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-bold">Email Verification</p>
-                                <p className="text-xs text-[#868E96]">
-                                  {user?.isEmailVerified ? 'Your email is verified' : 'Your email is not verified'}
+                              <button 
+                                onClick={() => setIsAvatarSelectOpen(true)}
+                                className="absolute bottom-0 right-0 w-10 h-10 bg-[#1A1A1A] text-white rounded-2xl flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
+                              >
+                                <Camera size={18} />
+                              </button>
+                            </div>
+                            <h4 className="font-bold text-xl">{user?.displayName || user?.name}</h4>
+                            <p className="text-sm text-[#868E96] mb-6">{user?.email}</p>
+                            
+                            <div className="space-y-4">
+                              <div className="space-y-3">
+                                <Label className="text-[10px] font-bold uppercase tracking-widest text-[#868E96]">Current Tier</Label>
+                                <Select value={user?.plan || 'basic'} onValueChange={(val: any) => {
+                                  if (val === user?.plan) return;
+                                  setPendingPlan(val);
+                                  setIsPlanConfirmOpen(true);
+                                }}>
+                                  <SelectTrigger className="rounded-2xl h-16 border-[#E9ECEF] font-bold uppercase text-xs px-6 shadow-sm hover:border-[#1A1A1A] transition-all">
+                                    <SelectValue placeholder="SELECT PLAN" />
+                                  </SelectTrigger>
+                                  <SelectContent className="rounded-2xl border-[#E9ECEF] p-1.5 min-w-[260px]">
+                                    <SelectItem value="basic" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                      BASIC PLAN — FREE
+                                    </SelectItem>
+                                    <SelectItem value="student" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                      STUDENT — $5.99 / MONTH
+                                    </SelectItem>
+                                    <SelectItem value="pro" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                      PRO PLAN — $9.99 / MONTH
+                                    </SelectItem>
+                                    <SelectItem value="premium" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                      PREMIUM — $21.99 / MONTH
+                                    </SelectItem>
+                                    <SelectItem value="business" className="uppercase font-bold text-[10px] py-3 px-4 rounded-xl focus:bg-[#F8F9FA] cursor-pointer tracking-wider">
+                                      BUSINESS — $28.00 / MONTH
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </Card>
+
+                          <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 space-y-4">
+                            <h4 className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-2">Account Utilities</h4>
+                            <div className="space-y-2">
+                               <Button variant="ghost" className="w-full justify-start gap-3 rounded-xl text-xs font-bold text-[#495057] hover:bg-[#F8F9FA]" onClick={() => toast.info("Data export initiated. You will receive a copy via email.")}>
+                                  <Download size={14} /> Export My Data
+                               </Button>
+                               <Button variant="ghost" className="w-full justify-start gap-3 rounded-xl text-xs font-bold text-[#495057] hover:bg-[#F8F9FA]" onClick={() => {
+                                 if (user) {
+                                  setAccountToDelete({ email: user.email, name: user.name });
+                                  setIsDeleteConfirmOpen(true);
+                                 }
+                               }}>
+                                  <Trash2 size={14} className="text-red-500" />
+                                  <span className="text-red-500">Deactivate Account</span>
+                               </Button>
+                               <Button 
+                                variant="ghost" 
+                                onClick={() => {
+                                  logout();
+                                  setSelectedAccountForLogin(null);
+                                  setLoginView('select');
+                                }}
+                                className="w-full justify-start gap-3 rounded-xl text-xs font-bold text-[#868E96] hover:bg-red-50 hover:text-red-500"
+                              >
+                                <LogOut size={14} /> Log Out
+                              </Button>
+                            </div>
+                          </Card>
+                        </div>
+
+                        <div className="md:col-span-2 space-y-8">
+                          <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
+                            <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
+                              <User size={20} className="text-blue-600" />
+                              Personal Information
+                            </h4>
+                            <div className="space-y-6">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                  <Label htmlFor="firstName" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">First Name</Label>
+                                  <Input 
+                                    id="firstName" 
+                                    value={editFirstName} 
+                                    onChange={(e) => setEditFirstName(e.target.value)}
+                                    className="rounded-xl h-12 border-[#E9ECEF] focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="lastName" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Last Name</Label>
+                                  <Input 
+                                    id="lastName" 
+                                    value={editLastName} 
+                                    onChange={(e) => setEditLastName(e.target.value)}
+                                    className="rounded-xl h-12 border-[#E9ECEF] focus:ring-blue-500"
+                                  />
+                                </div>
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <Label htmlFor="displayName" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Display Name (Max 12 chars)</Label>
+                                <Input 
+                                  id="displayName" 
+                                  value={editDisplayName} 
+                                  onChange={(e) => {
+                                    if (e.target.value.length <= 12) {
+                                      setEditDisplayName(e.target.value);
+                                    }
+                                  }}
+                                  className="rounded-xl h-12 border-[#E9ECEF] focus:ring-blue-500"
+                                />
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Email Address</Label>
+                                <Input 
+                                  id="email" 
+                                  value={user?.email} 
+                                  disabled
+                                  className="rounded-xl h-12 border-[#E9ECEF] bg-[#F8F9FA] text-[#ADB5BD]"
+                                />
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="contactInfo" className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Contact Information</Label>
+                                <Input 
+                                  id="contactInfo" 
+                                  value={editContactInfo} 
+                                  onChange={(e) => setEditContactInfo(e.target.value)}
+                                  placeholder="Phone number or other contact"
+                                  className="rounded-xl h-12 border-[#E9ECEF] focus:ring-blue-500"
+                                />
+                              </div>
+
+                              <Button 
+                                onClick={() => {
+                                  updateProfile({ 
+                                    firstName: editFirstName,
+                                    lastName: editLastName,
+                                    displayName: editDisplayName,
+                                    contactInfo: editContactInfo,
+                                    name: `${editFirstName} ${editLastName}`.trim() || user?.name
+                                  });
+                                  toast.success("Profile updated successfully!");
+                                }}
+                                className="w-full bg-[#1A1A1A] text-white rounded-xl px-6 h-12 font-bold shadow-lg"
+                              >
+                                Save Profile Changes
+                              </Button>
+                            </div>
+                          </Card>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {settingsSubTab === 'productivity' && (
+                      <motion.div
+                        key="productivity-tab"
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        className="space-y-8"
+                      >
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Security Section (Moved here) */}
+                            <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10 flex flex-col">
+                              <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
+                                <Shield size={20} className="text-blue-600" />
+                                Security & Trust
+                              </h4>
+                              <div className="space-y-6 flex-1">
+                                <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
+                                  <div className="flex items-center gap-4">
+                                    <div className="p-3 bg-white rounded-xl shadow-sm">
+                                      <Mail size={18} className="text-[#495057]" />
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-bold">Email Verification</p>
+                                      <p className="text-[10px] text-[#868E96]">
+                                        {user?.isEmailVerified ? 'Cloud sync active' : 'Sync locked'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {user?.isEmailVerified ? (
+                                    <Badge className="bg-green-500/10 text-green-600 border-none px-3 py-1 rounded-full font-bold text-[9px] uppercase tracking-wider">Secured</Badge>
+                                  ) : (
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm" 
+                                      className="rounded-xl font-bold h-8 text-[10px] bg-white text-blue-600 border-blue-600 hover:bg-blue-50"
+                                      onClick={() => handleSendVerificationEmail(user?.email || '', () => {})}
+                                    >
+                                      Verify
+                                    </Button>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
+                                  <div className="flex items-center gap-4">
+                                    <div className="p-3 bg-white rounded-xl shadow-sm">
+                                      <ShieldCheck size={18} className="text-blue-600" />
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-bold">Two-Step (2SV)</p>
+                                      <p className="text-[10px] text-[#868E96]">Extra layer of defense</p>
+                                    </div>
+                                  </div>
+                                  <Switch 
+                                    checked={user?.is2SVEnabled || false}
+                                    onCheckedChange={() => {
+                                      if (!user?.is2SVEnabled) {
+                                        setIs2SVSetupOpen(true);
+                                      } else {
+                                        toggle2SV();
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                
+                                <div className="pt-4 mt-auto">
+                                  <Button 
+                                    variant="outline"
+                                    onClick={() => setIsPasswordChangeOpen(true)}
+                                    className="w-full rounded-xl h-12 border-[#E9ECEF] font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#F8F9FA]"
+                                  >
+                                    <Lock size={14} /> Update Password
+                                  </Button>
+                                </div>
+                              </div>
+                            </Card>
+
+                            {/* Notifications Section (Moved here) */}
+                            <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10 flex flex-col">
+                              <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
+                                <Bell size={20} className="text-orange-600" />
+                                Alerts Center
+                              </h4>
+                              <div className="space-y-6 flex-1">
+                                <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl border border-orange-100/50">
+                                  <div className="flex items-center gap-4">
+                                    <div className="p-3 bg-white rounded-xl shadow-sm">
+                                      <AlertTriangle size={18} className="text-orange-600" />
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-bold">Overdue Push</p>
+                                      <p className="text-[10px] text-[#868E96]">Missed task reminders</p>
+                                    </div>
+                                  </div>
+                                  <Switch 
+                                    checked={overdueNotificationsEnabled}
+                                    onCheckedChange={setOverdueNotificationsEnabled}
+                                  />
+                                </div>
+
+                                <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl border border-blue-50">
+                                  <div className="flex items-center gap-4">
+                                    <div className="p-3 bg-white rounded-xl shadow-sm">
+                                      <MessageSquare size={18} className="text-blue-500" />
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-bold">AI Suggestions</p>
+                                      <p className="text-[10px] text-[#868E96]">Weekly focus insights</p>
+                                    </div>
+                                  </div>
+                                  <Switch checked={true} disabled />
+                                </div>
+                              </div>
+                              <div className="mt-8 p-4 bg-orange-50 rounded-2xl">
+                                <p className="text-[10px] text-orange-700 font-medium leading-relaxed italic">
+                                   Chronos uses high-priority alerts to ensure you never miss a critical deadline or goal target.
                                 </p>
                               </div>
-                            </div>
-                            {user?.isEmailVerified ? (
-                              <Badge className="bg-green-50 text-green-600 border-none px-3 py-1 rounded-full font-bold text-[10px]">Verified</Badge>
-                            ) : (
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="rounded-xl font-bold bg-white text-blue-600 border-blue-600 hover:bg-blue-50"
-                                onClick={() => handleSendVerificationEmail(user?.email || '', () => {})}
-                              >
-                                Verify Now
-                              </Button>
-                            )}
-                          </div>
+                            </Card>
+                         </div>
 
-                          <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
-                            <div className="flex items-center gap-4">
-                              <div className="p-3 bg-white rounded-xl shadow-sm">
-                                <ShieldCheck size={20} className="text-blue-600" />
-                              </div>
-                              <div>
-                                <p className="font-bold">Two-Step Verification</p>
-                                <p className="text-xs text-[#868E96]">Requires security code at login</p>
+                         {/* Time & Localization */}
+                         <Card className="border-none shadow-sm bg-white rounded-[3rem] p-10">
+                            <div className="flex items-center justify-between mb-8">
+                               <h4 className="text-xl font-bold flex items-center gap-3">
+                                <Globe size={20} className="text-blue-600" />
+                                Localization Hub
+                              </h4>
+                              <div className="flex bg-[#F8F9FA] p-1 rounded-xl">
+                                {['12h', '24h'].map((f) => (
+                                  <button
+                                    key={f}
+                                    onClick={() => setTimeFormat(f as any)}
+                                    className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${timeFormat === f ? 'bg-[#1A1A1A] text-white' : 'text-[#ADB5BD] hover:text-[#1A1A1A]'}`}
+                                  >
+                                    {f}
+                                  </button>
+                                ))}
                               </div>
                             </div>
-                            <Switch 
-                              checked={user?.is2SVEnabled || false}
-                              onCheckedChange={() => {
-                                if (!user?.is2SVEnabled) {
-                                  setIs2SVSetupOpen(true);
-                                } else {
-                                  toggle2SV();
-                                }
-                              }}
-                            />
-                          </div>
 
-                          <div className="pt-4">
-                            <Button 
-                              variant="outline"
-                              onClick={() => setIsPasswordChangeOpen(true)}
-                              className="w-full rounded-xl h-12 border-[#E9ECEF] font-bold text-sm flex items-center justify-center gap-2 hover:bg-[#F8F9FA]"
-                            >
-                              <Lock size={16} />
-                              Change Account Password
-                            </Button>
-                          </div>
-                        </div>
-                      </Card>
-
-                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
-                        <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
-                          <Bell size={20} className="text-orange-600" />
-                          Notifications
-                        </h4>
-                        <div className="space-y-6">
-                          <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
-                            <div className="flex items-center gap-4">
-                              <div className="p-3 bg-white rounded-xl shadow-sm">
-                                <AlertTriangle size={20} className="text-orange-600" />
-                              </div>
-                              <div>
-                                <p className="font-bold">Overdue Alerts</p>
-                                <p className="text-xs text-[#868E96]">Notify when projects pass deadline</p>
-                              </div>
-                            </div>
-                            <Switch 
-                              checked={overdueNotificationsEnabled}
-                              onCheckedChange={setOverdueNotificationsEnabled}
-                            />
-                          </div>
-                        </div>
-                      </Card>
-
-                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
-                        <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
-                          <Clock size={20} className="text-blue-600" />
-                          Time & Localization
-                        </h4>
-                        <div className="space-y-6">
-                          <div className="space-y-4">
-                            <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96] px-1">Saved Timezones ({savedTimezones.length}/{tzLimit})</Label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              {savedTimezones.map((tz) => (
-                                <div 
-                                  key={tz}
-                                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
-                                    timezone === tz ? 'border-blue-600 bg-blue-50/50 shadow-sm' : 'border-[#F1F3F5] bg-[#F8F9FA] hover:border-[#CED4DA]'
-                                  }`}
-                                  onClick={() => setTimezone(tz)}
-                                >
-                                  <div className="min-w-0">
-                                    <p className="font-bold text-sm truncate">{tz.split('/').pop()?.replace(/_/g, ' ')}</p>
-                                    <p className="text-[10px] text-[#ADB5BD] font-medium truncate">{tz}</p>
-                                    <p className="text-[10px] text-blue-600 font-bold mt-1">
-                                      {format(getZonedTime(currentTime, tz), timeFormat === '24h' ? 'HH:mm:ss' : 'hh:mm:ss a')}
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    {timezone === tz && <CheckCircle2 size={16} className="text-blue-600 shrink-0" />}
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (savedTimezones.length <= 1) {
-                                          toast.error("You must have at least one timezone");
-                                          return;
-                                        }
-                                        removeTimezone(tz);
-                                      }}
-                                      className="p-1 hover:bg-black/5 rounded-lg text-[#ADB5BD] hover:text-red-500 transition-colors"
+                            <div className="space-y-6">
+                              <div className="space-y-4">
+                                <Label className="text-[10px] font-bold uppercase tracking-widest text-[#868E96] px-1">Managed Timezones ({savedTimezones.length}/{tzLimit})</Label>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  {savedTimezones.map((tz) => (
+                                    <div 
+                                      key={tz}
+                                      className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
+                                        timezone === tz ? 'border-[#1A1A1A] bg-[#F8F9FA] shadow-md' : 'border-[#F1F3F5] bg-white hover:border-[#CED4DA]'
+                                      }`}
+                                      onClick={() => setTimezone(tz)}
                                     >
-                                      <X size={14} />
+                                      <div className="min-w-0">
+                                        <p className="font-bold text-sm truncate">{tz.split('/').pop()?.replace(/_/g, ' ')}</p>
+                                        <p className="text-[10px] text-blue-600 font-black mt-1">
+                                          {format(getZonedTime(currentTime, tz), timeFormat === '24h' ? 'HH:mm' : 'hh:mm a')}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {timezone === tz ? (
+                                           <div className="w-5 h-5 bg-[#1A1A1A] rounded-full flex items-center justify-center">
+                                              <Check size={12} className="text-white" />
+                                           </div>
+                                        ) : (
+                                          <button 
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (savedTimezones.length <= 1) return;
+                                              removeTimezone(tz);
+                                            }}
+                                            className="p-1 hover:bg-black/5 rounded-lg text-[#ADB5BD] hover:text-red-500 transition-colors"
+                                          >
+                                            <Trash2 size={12} />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {savedTimezones.length < tzLimit && (
+                                    <button
+                                      onClick={() => {
+                                        setTzStep('continent');
+                                        setSelCont('');
+                                        setSelZone('');
+                                        setIsTimezoneDialogOpen(true);
+                                      }}
+                                      className="p-5 h-full rounded-2xl border-2 border-dashed border-[#CED4DA] text-[#ADB5BD] font-bold text-[10px] uppercase tracking-[0.15em] flex flex-col items-center justify-center gap-2 hover:border-blue-600 hover:text-blue-600 transition-all bg-white"
+                                    >
+                                      <Plus size={20} />
+                                      Add Zone
                                     </button>
-                                  </div>
+                                  )}
                                 </div>
-                              ))}
-                              {savedTimezones.length < tzLimit && (
-                                <button
-                                  onClick={() => {
-                                    setTzStep('continent');
-                                    setSelCont('');
-                                    setSelZone('');
-                                    setIsTimezoneDialogOpen(true);
-                                  }}
-                                  className="p-4 rounded-2xl border-2 border-dashed border-[#CED4DA] text-[#ADB5BD] font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:border-blue-600 hover:text-blue-600 transition-all active:scale-[0.98]"
-                                >
-                                  <Plus size={16} /> Add Timezone
-                                </button>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-[#868E96] font-medium italic mt-2">* Your {user?.plan || 'basic'} plan limit: {tzLimit} timezones. Switching updates the global app clock.</p>
-                          </div>
-
-                          <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-2xl">
-                            <div className="flex items-center gap-4">
-                              <div className="p-3 bg-white rounded-xl shadow-sm">
-                                <Clock size={20} className="text-[#495057]" />
-                              </div>
-                              <div>
-                                <p className="font-bold">Time Format</p>
-                                <p className="text-xs text-[#868E96]">Switch between 12h and 24h</p>
                               </div>
                             </div>
-                            <div className="flex bg-white p-1 rounded-xl shadow-sm">
-                              {['12h', '24h'].map((f) => (
-                                <button
-                                  key={f}
-                                  onClick={() => setTimeFormat(f as any)}
-                                  className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${timeFormat === f ? 'bg-[#1A1A1A] text-white' : 'text-[#ADB5BD] hover:text-[#1A1A1A]'}`}
-                                >
-                                  {f}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    </div>
-                  </div>
+                         </Card>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               )}
               {activeTab === 'dashboard' && (
@@ -4002,13 +4231,14 @@ export default function App() {
               </motion.div>
             )}
               {activeTab === 'emails' && (
-                <motion.div
-                  key="emails"
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -10 }}
-                  className="space-y-10"
-                >
+                <PlanGuard plan="pro" label="Email Center" userPlan={user?.plan || 'basic'} userAddons={user?.purchasedAddons} addonId="advanced_mail" onNavigate={setActiveTab} onPurchaseAddon={handlePurchaseAddonAction}>
+                  <motion.div
+                    key="emails"
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    className="space-y-10"
+                  >
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div className="text-center lg:text-left">
                       <h3 className="text-3xl lg:text-4xl font-bold tracking-tighter">Emails & Notifications</h3>
@@ -4222,10 +4452,11 @@ export default function App() {
                     </div>
                   </div>
                 </motion.div>
+                </PlanGuard>
               )}
 
               {activeTab === 'productivity' && (
-                <PlanGuard plan="pro" label="Statistics & Analytics" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                <PlanGuard plan="pro" label="Statistics & Analytics" userPlan={user?.plan || 'basic'} userAddons={user?.purchasedAddons} addonId="advanced_stats" onNavigate={setActiveTab} onPurchaseAddon={handlePurchaseAddonAction}>
                   <motion.div
                     key="productivity"
                     initial={{ opacity: 0, y: 10 }}
@@ -4348,7 +4579,7 @@ export default function App() {
                 </PlanGuard>
               )}
               {activeTab === 'ai' && (
-                <PlanGuard plan="premium" label="AI Smart Scheduling" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                <PlanGuard plan="premium" label="AI Smart Scheduling" userPlan={user?.plan || 'basic'} userAddons={user?.purchasedAddons} addonId="ai_scheduling" onNavigate={setActiveTab} onPurchaseAddon={handlePurchaseAddonAction}>
                   <motion.div
                     key="ai"
                     initial={{ opacity: 0, scale: 0.95 }}
@@ -4420,7 +4651,7 @@ export default function App() {
               )}
 
               {activeTab === 'focus' && (
-                <PlanGuard plan="pro" label="Focus Timer" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                <PlanGuard plan="pro" label="Focus Timer" userPlan={user?.plan || 'basic'} userAddons={user?.purchasedAddons} addonId="focus_tools" onNavigate={setActiveTab} onPurchaseAddon={handlePurchaseAddonAction}>
                   <motion.div
                     key="focus"
                     initial={{ opacity: 0, y: 10 }}
@@ -4470,7 +4701,7 @@ export default function App() {
               )}
 
               {activeTab === 'goals' && (
-                <PlanGuard plan="premium" label="Goal Tracking" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                <PlanGuard plan="premium" label="Goal Tracking" userPlan={user?.plan || 'basic'} userAddons={user?.purchasedAddons} addonId="goal_tracker" onNavigate={setActiveTab} onPurchaseAddon={handlePurchaseAddonAction}>
                   <motion.div
                     key="goals"
                     initial={{ opacity: 0, y: 10 }}
@@ -4522,7 +4753,7 @@ export default function App() {
               )}
 
               {activeTab === 'academic' && (
-                <PlanGuard plan="student" label="Academic Hub" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                <PlanGuard plan="student" label="Academic Hub" userPlan={user?.plan || 'basic'} userAddons={user?.purchasedAddons} addonId="academic_suite" onNavigate={setActiveTab} onPurchaseAddon={handlePurchaseAddonAction}>
                   <motion.div
                     key="academic"
                     initial={{ opacity: 0, y: 10 }}
@@ -4532,67 +4763,206 @@ export default function App() {
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-4xl font-bold tracking-tighter">The Study Bundle</h3>
-                        <p className="text-[#868E96] font-medium mt-1">Semesters, grades, and shared sessions</p>
+                        <h3 className="text-4xl font-bold tracking-tighter">Academic Hub</h3>
+                        <p className="text-[#868E96] font-medium mt-1">Manage your semester, grades, and academic habits</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Button variant="outline" className="rounded-2xl h-12 px-6 font-bold flex items-center gap-2">
-                          <UserPlus size={18} /> Shared Session
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setIsGradingSetupOpen(true)}
+                          className="rounded-2xl h-12 px-6 font-bold flex items-center gap-2 border-[#E9ECEF]"
+                        >
+                          <Settings size={18} /> Grading Config
                         </Button>
-                        <Button className="rounded-2xl h-12 px-6 bg-[#1A1A1A] text-white font-bold flex items-center gap-2">
+                        <Button 
+                          onClick={() => {
+                            setCourseStep(1);
+                            setIsAddCourseDialogOpen(true);
+                          }}
+                          className="rounded-2xl h-12 px-6 bg-[#1A1A1A] text-white font-bold flex items-center gap-2 shadow-lg hover:shadow-black/20 transition-all"
+                        >
                           <Plus size={18} /> Add Course
                         </Button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10 space-y-8">
-                        <h4 className="text-xl font-bold flex items-center gap-3">
-                          <BookOpen size={20} className="text-blue-600" />
-                          Current Enrollment
-                        </h4>
-                        <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10 md:col-span-2 space-y-8">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xl font-bold flex items-center gap-3">
+                            <BookOpen size={20} className="text-blue-600" />
+                            Current Enrollment
+                          </h4>
+                          <Badge className="bg-blue-50 text-blue-600 border-none px-4 py-1 rounded-full font-bold uppercase tracking-widest text-[10px]">
+                            {semesterTimeline.mode === 'calendar' 
+                              ? `${semesterTimeline.startDate && isValid(new Date(semesterTimeline.startDate)) ? format(new Date(semesterTimeline.startDate), 'MMM') : '...'} - ${semesterTimeline.endDate && isValid(new Date(semesterTimeline.endDate)) ? format(new Date(semesterTimeline.endDate), 'MMM yyyy') : '...'}`
+                              : `${semesterTimeline.durationMonths || 0} Months Duration`
+                            }
+                          </Badge>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-4">
                           {courses.length === 0 ? (
-                            <p className="text-sm text-[#868E96] italic">No active courses. Add one to start tracking GPA.</p>
+                            <div className="py-12 text-center bg-[#F8F9FA] rounded-[2rem] border-2 border-dashed border-[#E9ECEF]">
+                              <p className="text-sm text-[#868E96] font-medium">No courses enrolled yet. Start your semester setup.</p>
+                            </div>
                           ) : (
-                            courses.map(course => (
-                              <div key={course.id} className="flex items-center justify-between p-5 bg-[#F8F9FA] rounded-3xl border border-transparent hover:border-black/5 transition-all group">
-                                <div>
-                                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">{course.code}</p>
-                                  <p className="font-bold text-lg">{course.name}</p>
-                                  <p className="text-xs text-[#868E96] font-medium">{course.credits} Credits</p>
+                            courses.map(course => {
+                              const isPassing = gradingConfig.format === 'alphabetical'
+                                ? (GRADE_VALS[course.grade] || 0) >= (GRADE_VALS[gradingConfig.passingGrade as string] || 0)
+                                : gradingConfig.isLowerBetter 
+                                  ? parseFloat(course.grade) <= parseFloat(gradingConfig.passingGrade as string)
+                                  : parseFloat(course.grade) >= parseFloat(gradingConfig.passingGrade as string);
+
+                              return (
+                                <div key={course.id} className="flex items-center justify-between p-6 bg-[#F8F9FA] rounded-3xl group hover:bg-white hover:shadow-xl hover:shadow-black/5 transition-all">
+                                  <div className="flex items-center gap-5">
+                                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl shadow-sm border ${isPassing ? 'bg-green-50 text-green-600 border-green-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                      {course.grade}
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] font-bold text-[#868E96] uppercase tracking-widest mb-1">{course.code}</p>
+                                      <p className="font-bold text-lg">{course.name}</p>
+                                      <div className="flex items-center gap-3 mt-1">
+                                        <Badge variant="outline" className="rounded-lg text-[9px] font-bold opacity-60">
+                                          {course.credits} Credits
+                                        </Badge>
+                                        {isPassing ? (
+                                          <Badge className="bg-green-500/10 text-green-600 border-none text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <Check size={10} /> PASS
+                                          </Badge>
+                                        ) : (
+                                          <Badge className="bg-red-500/10 text-red-600 border-none text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <AlertCircle size={10} /> FAIL
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className="text-xs font-bold text-[#868E96] uppercase tracking-widest">Standing</span>
+                                    <span className="text-sm font-black">{course.percentage}%</span>
+                                  </div>
                                 </div>
-                                <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-[#E9ECEF]">
-                                  <span className="font-black text-xl">{course.grade}</span>
-                                </div>
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
                       </Card>
 
-                      <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
-                        <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
-                          <Star size={20} className="text-orange-500" />
-                          GPA Tracker
-                        </h4>
-                        <div className="text-center py-6 space-y-4">
-                          <p className="text-6xl font-black tracking-tight">3.85</p>
-                          <p className="text-sm font-bold text-[#868E96] uppercase tracking-widest">Cumulative Average</p>
-                          <div className="pt-6">
-                            <Button variant="outline" className="w-full rounded-2xl h-12 font-bold border-[#E9ECEF]">
-                              Analyze Grade Impacts
-                            </Button>
+                      <div className="space-y-8">
+                        <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-10">
+                          <h4 className="text-xl font-bold mb-8 flex items-center gap-3">
+                            <Star size={20} className="text-orange-500" />
+                            GPA Tracker
+                          </h4>
+                          <div className="text-center py-6 space-y-4">
+                            <p className="text-7xl font-black tracking-tighter text-[#1A1A1A]">{calculatedGPA}</p>
+                            <p className="text-xs font-bold text-[#868E96] uppercase tracking-widest">Cumulative Standing</p>
+                            <div className="pt-8">
+                              <Button 
+                                variant="outline" 
+                                onClick={() => setIsAnalyzeGradesDialogOpen(true)}
+                                className="w-full rounded-2xl h-14 font-bold border-[#E9ECEF] hover:bg-[#F8F9FA] transition-all"
+                              >
+                                Analyze Grade Impacts
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      </Card>
+                        </Card>
+
+                        <Card className="border-none shadow-sm bg-[#1A1A1A] text-white rounded-[2.5rem] p-10 overflow-hidden relative group">
+                          <div className="relative z-10 space-y-6">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-lg font-bold">Academic Health</h4>
+                              <Zap size={20} className="text-yellow-400" />
+                            </div>
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest text-gray-400">
+                                <span>Consistency Score</span>
+                                <span>{academicStats.consistencyScore}%</span>
+                              </div>
+                              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${academicStats.consistencyScore}%` }}
+                                  className="h-full bg-yellow-400 rounded-full"
+                                />
+                              </div>
+                              <p className="text-[10px] text-gray-500 leading-relaxed italic">
+                                Your consistency is calculated based on study-to-break ratios and session frequency.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/10 blur-3xl -mr-16 -mt-16 group-hover:bg-yellow-400/20 transition-all duration-700" />
+                        </Card>
+                      </div>
+                    </div>
+
+                    {/* Statistics Dashboard */}
+                    <div className="space-y-8">
+                       <h3 className="text-2xl font-bold tracking-tight px-4">Academic Performance & Analytics</h3>
+                       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 px-4">
+                          <Card className="p-8 bg-white rounded-[2rem] border-none shadow-sm space-y-4">
+                            <p className="text-[10px] font-bold text-[#868E96] uppercase tracking-widest">Focus Time</p>
+                            <div className="flex items-end gap-2">
+                              <span className="text-4xl font-black">{academicStats.focusTime}</span>
+                              <span className="text-xs font-bold text-[#868E96] pb-1.5">Sessions</span>
+                            </div>
+                            <div className="h-1 bg-blue-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-600 w-full" />
+                            </div>
+                          </Card>
+                          
+                          <Card className="p-8 bg-white rounded-[2rem] border-none shadow-sm space-y-4">
+                             <p className="text-[10px] font-bold text-[#868E96] uppercase tracking-widest">Review Time</p>
+                             <div className="flex items-end gap-2">
+                                <span className="text-4xl font-black">{academicStats.reviewTime}</span>
+                                <span className="text-xs font-bold text-[#868E96] pb-1.5">Sessions</span>
+                             </div>
+                             <div className="h-1 bg-purple-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-purple-600 w-full" />
+                             </div>
+                          </Card>
+                          
+                          <Card className="p-8 bg-white rounded-[2rem] border-none shadow-sm space-y-4">
+                             <p className="text-[10px] font-bold text-[#868E96] uppercase tracking-widest">Break Time</p>
+                             <div className="flex items-end gap-2">
+                                <span className="text-4xl font-black">{academicStats.breakTime}</span>
+                                <span className="text-xs font-bold text-[#868E96] pb-1.5">Sessions</span>
+                             </div>
+                             <div className="h-1 bg-orange-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-orange-600 w-full" />
+                             </div>
+                          </Card>
+
+                          <Card className="p-8 bg-white rounded-[2rem] border-none shadow-sm space-y-6 md:col-span-3 lg:col-span-1">
+                             <p className="text-[10px] font-bold text-[#868E96] uppercase tracking-widest">Course Standing Bar</p>
+                             <div className="space-y-4">
+                               <div className="flex items-center justify-between text-xs font-bold">
+                                  <span>Academic Stability</span>
+                                  <span className="text-blue-600">{academicStats.performance}%</span>
+                               </div>
+                               <div className="h-4 bg-[#F8F9FA] rounded-xl overflow-hidden p-1 shadow-inner border border-[#E9ECEF]">
+                                  <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${academicStats.performance}%` }}
+                                    className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-lg"
+                                  />
+                               </div>
+                               <p className="text-[9px] text-[#868E96] font-bold leading-tight uppercase tracking-tighter">
+                                  Maintaining "Good Grades" based on your threshold.
+                               </p>
+                             </div>
+                          </Card>
+                       </div>
                     </div>
                   </motion.div>
                 </PlanGuard>
               )}
 
               {activeTab === 'teams' && (
-                <PlanGuard plan="enterprise" label="Team Sync" userPlan={user?.plan || 'basic'} onNavigate={setActiveTab}>
+                <PlanGuard plan="business" label="Team Sync" userPlan={user?.plan || 'basic'} userAddons={user?.purchasedAddons} addonId="business_sync" onNavigate={setActiveTab} onPurchaseAddon={handlePurchaseAddonAction}>
                   <motion.div
                     key="teams"
                     initial={{ opacity: 0, y: 10 }}
@@ -4602,7 +4972,7 @@ export default function App() {
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-4xl font-bold tracking-tighter">Enterprise Control</h3>
+                        <h3 className="text-4xl font-bold tracking-tighter">Business Hub</h3>
                         <p className="text-[#868E96] font-medium mt-1">Manage team availability and billable logs</p>
                       </div>
                       <Button className="rounded-2xl h-12 px-6 bg-[#1A1A1A] text-white font-bold flex items-center gap-2 shadow-lg">
@@ -4854,9 +5224,9 @@ export default function App() {
               <p className="text-xl font-bold uppercase tracking-tight">
                 {pendingPlan} — {
                   pendingPlan === 'basic' ? 'FREE' : 
-                  pendingPlan === 'pro' ? '$8.99 / MONTH' : 
-                  pendingPlan === 'premium' ? '$19.99 / MONTH' : 
-                  pendingPlan === 'student' ? '$4.99 / MONTH' : '$25.00 / MONTH'
+                  pendingPlan === 'student' ? '$5.99 / MONTH' : 
+                  pendingPlan === 'pro' ? '$9.99 / MONTH' : 
+                  pendingPlan === 'premium' ? '$21.99 / MONTH' : '$28.00 / SEAT'
                 }
               </p>
             </div>
@@ -5140,6 +5510,491 @@ export default function App() {
               className="bg-[#1A1A1A] text-white rounded-xl h-12 flex-1 font-bold shadow-lg"
             >
               Recover Account
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Course Dialog */}
+      <Dialog open={isAddCourseDialogOpen} onOpenChange={setIsAddCourseDialogOpen}>
+        <DialogContent className="max-w-2xl rounded-[2.5rem] p-10 overflow-y-auto max-h-[90vh] border-none shadow-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+               <Badge className="bg-blue-50 text-blue-600 border-none px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">Step {courseStep} of 3</Badge>
+               <span className="text-xs font-bold text-[#868E96] uppercase tracking-widest">Academic Enrollment</span>
+            </div>
+            <DialogTitle className="text-4xl font-black tracking-tight uppercase">
+              {courseStep === 1 ? 'Semester Timeline' : courseStep === 2 ? 'Term Volume' : `Course Details (${iterativeCourseIndex + 1}/${semesterTimeline.plannedCourseCount})`}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddCourseSequence} className="space-y-10 py-10">
+            {courseStep === 1 && (
+              <div className="space-y-8">
+                 <div className="p-8 bg-[#F8F9FA] rounded-[2rem] space-y-6">
+                    <p className="text-sm font-bold text-[#1A1A1A]">How would you like to define your semester duration?</p>
+                    <RadioGroup 
+                      value={semesterTimeline.mode} 
+                      onValueChange={(val: any) => setSemesterTimeline({...semesterTimeline, mode: val})}
+                      className="grid grid-cols-2 gap-4"
+                    >
+                      <div className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${semesterTimeline.mode === 'calendar' ? 'border-blue-600 bg-blue-50' : 'border-[#E9ECEF] bg-white'}`}>
+                        <RadioGroupItem value="calendar" id="calendar" className="sr-only" />
+                        <Label htmlFor="calendar" className="flex items-center gap-3 cursor-pointer">
+                          <Calendar size={18} />
+                          <span className="font-bold">Calendar Dates</span>
+                        </Label>
+                      </div>
+                      <div className={`p-4 rounded-2xl border-2 transition-all cursor-pointer ${semesterTimeline.mode === 'months' ? 'border-blue-600 bg-blue-50' : 'border-[#E9ECEF] bg-white'}`}>
+                        <RadioGroupItem value="months" id="months" className="sr-only" />
+                        <Label htmlFor="months" className="flex items-center gap-3 cursor-pointer">
+                          <Clock size={18} />
+                          <span className="font-bold">Month Based</span>
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                 </div>
+
+                 {semesterTimeline.mode === 'calendar' ? (
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pb-6">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Start Date</Label>
+                        <Input 
+                          type="date" 
+                          value={semesterTimeline.startDate || ''} 
+                          onChange={(e) => setSemesterTimeline({...semesterTimeline, startDate: e.target.value})}
+                          className="rounded-2xl h-14 border-[#E9ECEF] font-bold" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">End Date</Label>
+                        <Input 
+                          type="date" 
+                          value={semesterTimeline.endDate || ''} 
+                          onChange={(e) => setSemesterTimeline({...semesterTimeline, endDate: e.target.value})}
+                          className="rounded-2xl h-14 border-[#E9ECEF] font-bold" 
+                        />
+                      </div>
+                   </div>
+                 ) : (
+                   <div className="space-y-2 pb-6">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Number of Months</Label>
+                      <Input 
+                        type="number" 
+                        placeholder="e.g. 4"
+                        value={semesterTimeline.durationMonths}
+                        onChange={(e) => setSemesterTimeline({...semesterTimeline, durationMonths: parseInt(e.target.value)})}
+                        className="rounded-2xl h-14 border-[#E9ECEF] font-bold" 
+                      />
+                      <p className="text-[10px] text-[#868E96] font-medium italic">Calculates from the start of the current month to the end of month {new Date().getMonth() + (semesterTimeline.durationMonths || 1)}.</p>
+                   </div>
+                 )}
+              </div>
+            )}
+
+            {courseStep === 2 && (
+              <div className="space-y-6 py-4">
+                 <div className="p-10 bg-blue-600 rounded-[2.5rem] text-white text-center space-y-4">
+                    <BookOpen size={48} className="mx-auto opacity-50" />
+                    <h4 className="text-2xl font-bold">Planned Semester Volume</h4>
+                    <p className="text-blue-100 text-sm max-w-xs mx-auto">How many courses or subjects are you enrolled in for this semester?</p>
+                 </div>
+                 <div className="space-y-2">
+                    <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Courses in Semester</Label>
+                    <Input 
+                      type="number" 
+                      placeholder="e.g. 5"
+                      value={semesterTimeline.plannedCourseCount}
+                      onChange={(e) => setSemesterTimeline({...semesterTimeline, plannedCourseCount: parseInt(e.target.value)})}
+                      className="rounded-2xl h-16 text-2xl text-center font-black border-[#E9ECEF]" 
+                    />
+                 </div>
+              </div>
+            )}
+
+            {courseStep === 3 && (
+              <div className="space-y-8">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Course Name / Program</Label>
+                      <Input 
+                        placeholder="e.g. Computer Science 101"
+                        className="rounded-2xl h-14 border-[#E9ECEF] font-bold"
+                        value={newCourse.name}
+                        onChange={(e) => setNewCourse({...newCourse, name: e.target.value})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Course Code</Label>
+                      <Input 
+                        placeholder="e.g. CS101"
+                        className="rounded-2xl h-14 border-[#E9ECEF] font-bold"
+                        value={newCourse.code}
+                        onChange={(e) => setNewCourse({...newCourse, code: e.target.value})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Unit Value (Credits)</Label>
+                      <Input 
+                        type="number"
+                        className="rounded-2xl h-14 border-[#E9ECEF] font-bold"
+                        value={newCourse.credits}
+                        onChange={(e) => setNewCourse({...newCourse, credits: parseInt(e.target.value)})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-[#868E96]">Passing Threshold (%)</Label>
+                      <Input 
+                        type="number"
+                        className="rounded-2xl h-14 border-[#E9ECEF] font-bold"
+                        value={newCourse.passingThreshold}
+                        onChange={(e) => setNewCourse({...newCourse, passingThreshold: parseInt(e.target.value)})}
+                      />
+                    </div>
+                 </div>
+
+                 <div className="p-8 bg-[#F8F9FA] rounded-[2rem] space-y-6">
+                    <div className="flex items-center justify-between">
+                       <Label className="text-sm font-bold">Grade Weights</Label>
+                       <div className="flex items-center gap-2">
+                         <span className={`text-[10px] font-bold uppercase tracking-widest ${!newCourse.isAlphabetical ? 'text-blue-600' : 'text-[#868E96]'}`}>%</span>
+                         <Switch 
+                           checked={newCourse.isAlphabetical} 
+                           onCheckedChange={(checked) => setNewCourse({...newCourse, isAlphabetical: checked})}
+                         />
+                         <span className={`text-[10px] font-bold uppercase tracking-widest ${newCourse.isAlphabetical ? 'text-blue-600' : 'text-[#868E96]'}`}>A-F</span>
+                       </div>
+                    </div>
+                    
+                    {newCourse.isAlphabetical ? (
+                       <div className="space-y-4">
+                          <Select value={newCourse.grade} onValueChange={(val) => setNewCourse({...newCourse, grade: val})}>
+                            <SelectTrigger className="rounded-2xl h-14 border-[#E9ECEF] bg-white font-bold">
+                              <SelectValue placeholder="Current Standing" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.keys(GRADE_VALS).map(g => (
+                                <SelectItem key={g} value={g}>{g}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-[#868E96] font-bold uppercase tracking-widest text-center">
+                            Equivalent Percentage: {gradingConfig.mappings?.[newCourse.grade || 'A'] || 95}%
+                          </p>
+                       </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Input 
+                          type="number"
+                          placeholder="Grade Percentage (e.g. 95)"
+                          className="rounded-2xl h-14 border-[#E9ECEF] bg-white font-bold"
+                          value={newCourse.percentage}
+                          onChange={(e) => setNewCourse({...newCourse, percentage: parseInt(e.target.value), grade: e.target.value})}
+                        />
+                      </div>
+                    )}
+                 </div>
+              </div>
+            )}
+
+            <DialogFooter className="gap-4">
+              {courseStep > 1 && (
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  onClick={() => setCourseStep(courseStep - 1)} 
+                  className="rounded-2xl h-14 px-8 font-bold text-[#868E96]"
+                >
+                  Back
+                </Button>
+              )}
+              <Button type="submit" className="flex-1 rounded-2xl h-14 bg-[#1A1A1A] text-white font-black shadow-2xl shadow-black/20 hover:translate-y-[-2px] transition-all">
+                {courseStep === 3 ? (iterativeCourseIndex < (semesterTimeline.plannedCourseCount || 1) - 1 ? 'Next Course' : 'Finish Enrollment') : 'Continue Setup'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grading Setup Dialog */}
+      {/* Grading Setup Dialog - Progressive Wizard */}
+      <Dialog open={isGradingSetupOpen} onOpenChange={(open) => {
+        setIsGradingSetupOpen(open);
+        if (open) setGradingStep(1);
+      }}>
+        <DialogContent className="max-w-3xl w-[95vw] min-h-[500px] max-h-[85vh] rounded-[2rem] md:rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden flex flex-col bg-white text-[#1A1A1A]">
+          {/* Progress Header */}
+          <div className="bg-[#1A1A1A] p-6 md:p-8 text-white relative flex flex-col items-center text-center shrink-0">
+             <div className="flex gap-2 mb-4">
+                {[1, 2, 3].map((s) => (
+                  <div key={s} className={`h-1 rounded-full transition-all duration-500 ${gradingStep >= s ? 'w-8 bg-blue-500' : 'w-4 bg-white/20'}`} />
+                ))}
+             </div>
+             <Badge className="bg-white/10 text-blue-400 border-none px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[9px] mb-2">Step {gradingStep} of 3</Badge>
+             <DialogTitle className="text-2xl font-black tracking-tight uppercase leading-tight">
+                {gradingStep === 1 && "Format & Direction"}
+                {gradingStep === 2 && "Score Thresholds"}
+                {gradingStep === 3 && "Weight Matrix"}
+             </DialogTitle>
+          </div>
+
+          {/* Step Content */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-10 min-h-0 bg-white">
+            <AnimatePresence mode="wait">
+              {gradingStep === 1 && (
+                <motion.div 
+                  key="step1"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-8"
+                >
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#ADB5BD]">Selection System</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[
+                        { id: 'alphabetical', label: 'Alphabetical', sub: 'A thru F System', icon: <BookOpen size={20} /> },
+                        { id: 'numerical', label: 'Numerical', sub: '100 thru 0 System', icon: <Target size={20} /> }
+                      ].map((mode) => (
+                        <button
+                          key={mode.id}
+                          onClick={() => {
+                            const isAlpha = mode.id === 'alphabetical';
+                            setGradingConfig({
+                              ...gradingConfig, 
+                              format: mode.id as any,
+                              highestGrade: isAlpha ? 'A' : '100',
+                              lowestGrade: isAlpha ? 'F' : '0',
+                              passingGrade: isAlpha ? 'C' : '60',
+                              mappings: isAlpha ? (gradingConfig.mappings || { 'A': 100, 'B': 85, 'C': 75, 'D': 65, 'F': 50 }) : undefined
+                            });
+                          }}
+                          className={`text-left p-6 rounded-[2rem] border-2 transition-all group relative overflow-hidden flex flex-col gap-4 ${
+                            gradingConfig.format === mode.id 
+                              ? 'border-[#1A1A1A] bg-[#F8F9FA] shadow-xl' 
+                              : 'border-[#F1F3F5] hover:border-[#CED4DA] bg-white'
+                          }`}
+                        >
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${gradingConfig.format === mode.id ? 'bg-[#1A1A1A] text-white' : 'bg-gray-100 text-gray-400'}`}>
+                            {mode.icon}
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm text-[#1A1A1A] tracking-tight">{mode.label}</p>
+                            <p className="text-[10px] text-[#868E96] font-bold uppercase tracking-widest leading-none mt-1">{mode.sub}</p>
+                          </div>
+                          {gradingConfig.format === mode.id && <div className="absolute top-4 right-4 w-2 h-2 bg-blue-500 rounded-full" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-6 bg-blue-50/50 rounded-[2rem] border border-blue-100/50 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-bold text-[#1A1A1A]">Inverse Scoring</p>
+                      <p className="text-xs text-blue-600 font-medium">Is a lower numerical value better? (e.g. Golf or Rank 1)</p>
+                    </div>
+                    <Switch 
+                      checked={gradingConfig.isLowerBetter} 
+                      onCheckedChange={(checked) => setGradingConfig({...gradingConfig, isLowerBetter: checked})}
+                      className="data-[state=checked]:bg-blue-600 focus:ring-blue-500"
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              {gradingStep === 2 && (
+                <motion.div 
+                  key="step2"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-8"
+                >
+                  <div className="grid grid-cols-1 gap-6">
+                     {[
+                       { label: 'Maximum Attainable Score', value: gradingConfig.highestGrade, key: 'highestGrade', placeholder: 'e.g. A+ or 100', desc: 'The peak of your grading curve.' },
+                       { label: 'Passing Benchmark', value: gradingConfig.passingGrade, key: 'passingGrade', placeholder: 'e.g. C or 60', desc: 'The minimum required to clear a course.' },
+                       { label: 'Floor Score', value: gradingConfig.lowestGrade, key: 'lowestGrade', placeholder: 'e.g. F or 0', desc: 'The absolute lowest possible entry.' }
+                     ].map((item) => (
+                       <div key={item.key} className="p-6 bg-[#F8F9FA] rounded-[2rem] space-y-4 border border-transparent focus-within:border-blue-100 transition-all">
+                          <div>
+                            <Label className="text-sm font-bold text-[#1A1A1A]">{item.label}</Label>
+                            <p className="text-[10px] text-[#868E96] font-bold uppercase tracking-widest mt-0.5">{item.desc}</p>
+                          </div>
+                          <Input 
+                            value={item.value}
+                            placeholder={item.placeholder}
+                            onChange={(e) => setGradingConfig({...gradingConfig, [item.key]: e.target.value})}
+                            className="bg-white rounded-xl h-14 border-none shadow-sm font-black text-xl px-6 text-[#1A1A1A]"
+                          />
+                       </div>
+                     ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {gradingStep === 3 && (
+                <motion.div 
+                  key="step3"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-8"
+                >
+                   {gradingConfig.format === 'alphabetical' ? (
+                    <div className="space-y-6">
+                      <div className="p-4 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 flex items-start gap-3">
+                         <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                         <p className="text-[10px] font-bold uppercase leading-relaxed tracking-wider">Define how letter grades translate to percentage weights for GPA calculation.</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {Object.entries(gradingConfig.mappings || { 'A+': 100, 'A': 95, 'A-': 90, 'B+': 85, 'B': 80, 'B-': 75, 'C+': 70, 'C': 65, 'C-': 60, 'D+': 55, 'D': 50, 'F': 0 }).map(([grade, val], idx) => (
+                          <div key={grade} className="bg-[#F8F9FA] p-4 rounded-2xl flex items-center justify-between border border-transparent hover:border-blue-100 transition-all shadow-sm">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 shadow-sm border border-gray-100">
+                                {grade}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input 
+                                  type="number"
+                                  value={val}
+                                  onChange={(e) => {
+                                    const v = parseInt(e.target.value) || 0;
+                                    const newMappings = { ...gradingConfig.mappings, [grade]: v };
+                                    setGradingConfig({ ...gradingConfig, mappings: newMappings });
+                                  }}
+                                  className="w-12 bg-transparent font-black text-[#1A1A1A] focus:outline-none text-right"
+                                />
+                                <span className="text-[10px] font-black text-[#ADB5BD]">%</span>
+                              </div>
+                            </div>
+                            <button className="p-2 hover:bg-red-50 text-red-300 hover:text-red-500 transition-colors">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                        <button className="h-14 border-2 border-dashed border-[#CED4DA] rounded-2xl flex items-center justify-center gap-3 text-[#ADB5BD] hover:text-blue-600 hover:border-blue-600 hover:bg-blue-50 transition-all">
+                          <Plus size={18} />
+                          <span className="text-xs font-bold uppercase tracking-widest">Add Literal</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-[300px] bg-[#F8F9FA] rounded-[3rem] border-2 border-dashed border-[#E9ECEF] flex flex-col items-center justify-center text-center p-10">
+                       <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-xl mb-6">
+                          <Zap size={32} className="text-blue-500" />
+                       </div>
+                       <h5 className="text-xl font-bold text-[#1A1A1A]">Standardized Numerical Entry</h5>
+                       <p className="text-xs text-[#868E96] max-w-[240px] mt-2 font-medium">Since you're using a numerical system, weights are calculated based on raw percentage values.</p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Wizard Footer */}
+          <div className="p-6 md:p-8 bg-white border-t border-[#F1F3F5] flex items-center justify-between shrink-0">
+            <Button 
+              variant="outline" 
+              onClick={() => gradingStep > 1 ? setGradingStep(gradingStep - 1) : setIsGradingSetupOpen(false)}
+              className="px-8 rounded-xl font-bold h-12"
+            >
+              {gradingStep === 1 ? "Exit" : "Back"}
+            </Button>
+            
+            {gradingStep < 3 ? (
+              <Button 
+                onClick={() => setGradingStep(gradingStep + 1)}
+                className="px-10 bg-[#1A1A1A] text-white rounded-xl font-bold h-12 gap-2"
+              >
+                Continue Setup <ChevronRight size={16} />
+              </Button>
+            ) : (
+              <Button 
+                onClick={() => setIsGradingSetupOpen(false)}
+                className="px-10 bg-blue-600 text-white hover:bg-blue-700 rounded-xl font-bold h-12 gap-2"
+              >
+                <Check size={18} /> Complete Logic
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Analyze Grades Dialog */}
+      <Dialog open={isAnalyzeGradesDialogOpen} onOpenChange={setIsAnalyzeGradesDialogOpen}>
+        <DialogContent className="max-w-2xl rounded-[2.5rem] p-8 overflow-y-auto max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="text-3xl font-bold tracking-tight">GRADE ANALYTICS</DialogTitle>
+            <DialogDescription>
+              A breakdown of your subject performance and its impact on your GPA.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-8 py-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="p-6 bg-blue-50 border-none rounded-3xl text-center">
+                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">GPA</p>
+                <p className="text-4xl font-black text-[#1A1A1A]">{calculatedGPA}</p>
+              </Card>
+              <Card className="p-6 bg-purple-50 border-none rounded-3xl text-center">
+                <p className="text-[10px] font-bold text-purple-600 uppercase tracking-widest mb-1">Courses</p>
+                <p className="text-4xl font-black text-[#1A1A1A]">{courses.length}</p>
+              </Card>
+              <Card className="p-6 bg-orange-50 border-none rounded-3xl text-center">
+                <p className="text-[10px] font-bold text-orange-600 uppercase tracking-widest mb-1">Total Credits</p>
+                <p className="text-4xl font-black text-[#1A1A1A]">{courses.reduce((acc, c) => acc + c.credits, 0)}</p>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-sm font-bold uppercase tracking-widest text-[#868E96]">Subject Contributions</h4>
+              {courses.length === 0 ? (
+                <p className="text-center py-10 text-[#868E96] italic bg-[#F8F9FA] rounded-[2rem]">No courses added yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {courses.map(course => (
+                    <div key={course.id} className="flex items-center justify-between p-5 bg-white border border-[#E9ECEF] rounded-3xl hover:border-blue-200 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-[#F8F9FA] rounded-2xl flex items-center justify-center font-black text-xl text-blue-600">
+                          {course.grade}
+                        </div>
+                        <div>
+                          <p className="font-bold text-lg leading-tight">{course.name}</p>
+                          <p className="text-xs text-[#868E96] font-medium">{course.code} • {course.credits} Credits</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-[#1A1A1A]">
+                          {gradingConfig.format === 'alphabetical' 
+                            ? (gradingConfig.mappings?.[course.grade] !== undefined 
+                                ? (gradingConfig.mappings[course.grade] / 25).toFixed(1) 
+                                : (GRADE_VALS[course.grade] || 0).toFixed(1))
+                            : parseFloat(course.grade).toFixed(1)
+                          } Pts
+                        </p>
+                        <p className="text-[10px] text-[#868E96] font-bold uppercase tracking-widest">Value</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 bg-[#1A1A1A] text-white rounded-[2rem]">
+              <h4 className="font-bold mb-2 flex items-center gap-2">
+                <Target size={18} />
+                Semester Overview
+              </h4>
+              <p className="text-sm text-gray-400">
+                Based on your {courses.length} courses, you are maintaining a {calculatedGPA} GPA.
+              </p>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button onClick={() => setIsAnalyzeGradesDialogOpen(false)} className="rounded-2xl h-12 px-10 bg-[#1A1A1A] text-white font-bold w-full">
+              Close Analytics
             </Button>
           </DialogFooter>
         </DialogContent>

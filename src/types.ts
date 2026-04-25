@@ -104,7 +104,27 @@ export interface Course {
   name: string;
   code: string;
   grade: string;
+  percentage?: number;
   credits: number;
+  passingThreshold: number;
+  isAlphabetical: boolean;
+}
+
+export interface GradingConfig {
+  format: 'alphabetical' | 'numerical';
+  highestGrade: string | number;
+  lowestGrade: string | number;
+  passingGrade: string | number;
+  isLowerBetter: boolean;
+  mappings: Record<string, number>;
+}
+
+export interface SemesterTimeline {
+  mode: 'calendar' | 'months';
+  startDate?: string;
+  endDate?: string;
+  durationMonths?: number;
+  plannedCourseCount?: number;
 }
 
 export interface BillableHour {
