@@ -42,7 +42,12 @@ import {
   Upload,
   Download,
   Maximize2,
-  ShieldCheck
+  ShieldCheck,
+  Brain,
+  Bot,
+  Sparkles,
+  Flame,
+  Smile
 } from 'lucide-react';
 import { useChronosStore } from './hooks/useChronosStore';
 import { geminiService } from './services/geminiService';
@@ -280,9 +285,73 @@ export default function App() {
   const [editPlan, setEditPlan] = useState(user?.plan || 'pro');
   const [isZoomOpen, setIsZoomOpen] = useState(false);
   const [isAvatarSelectOpen, setIsAvatarSelectOpen] = useState(false);
-  const [settingsSubTab, setSettingsSubTab] = useState<'profile' | 'productivity' | 'security' | 'notifications'>('profile');
+  const [settingsSubTab, setSettingsSubTab] = useState<'profile' | 'productivity' | 'security' | 'notifications' | 'readme'>('profile');
+  const [readmeSection, setReadmeSection] = useState<'overview' | 'tasks' | 'ai' | 'grading'>('overview');
   const [isPlanConfirmOpen, setIsPlanConfirmOpen] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<'basic' | 'student' | 'pro' | 'premium' | 'business' | null>(null);
+  
+  // Interactive Support states
+  const [isSupportDialogOpen, setIsSupportDialogOpen] = useState(false);
+  const [supportCategory, setSupportCategory] = useState<'billing' | 'academic' | 'ai' | 'technical'>('technical');
+  const [supportEmail, setSupportEmail] = useState(user?.email || '');
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportChat, setSupportChat] = useState<{ sender: 'user' | 'agent'; text: string; time: string }[]>([
+    { sender: 'agent', text: 'Hi! I am your Chronos AI Technical Assistant. Type any technical issue or query here, and I will assist you immediately!', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+  ]);
+  const [supportChatInput, setSupportChatInput] = useState('');
+  const [isSupportReplying, setIsSupportReplying] = useState(false);
+  
+  // AIAgent States
+  const [agents, setAgents] = useState<any[]>([
+    {
+      id: 'chronos',
+      name: 'Chronos Orchestrator',
+      tone: 'Efficient & Precise',
+      promptPrefix: 'You are the default Chronos Orchestrator. You help the user manage their tasks, courses, and schedules. You have system capabilities to schedule events, clear events, break down tasks, and analyze productivity.',
+      iconName: 'Sparkles',
+      color: 'purple',
+      isSystem: true
+    },
+    {
+      id: 'academic',
+      name: 'Academic Study Coach',
+      tone: 'Encouraging & Detail-Oriented',
+      promptPrefix: 'You are the Academic Study Coach. You specialize in breaking down study materials, explaining complex concepts, helping weight assignments, and giving helpful exam tips.',
+      iconName: 'BookOpen',
+      color: 'amber',
+      isSystem: true
+    },
+    {
+      id: 'motivator',
+      name: 'Focus & Grit Companion',
+      tone: 'Energetic, Motivating & Pushy',
+      promptPrefix: 'You are the Focus & Grit Companion. You are a highly energetic study companion. You push the user to execute their tasks, start deep focus blocks, stop procrastinating, and build grit.',
+      iconName: 'Flame',
+      color: 'rose',
+      isSystem: true
+    }
+  ]);
+
+  const [activeAgentId, setActiveAgentId] = useState<string>('chronos');
+  const [agentChats, setAgentChats] = useState<Record<string, { sender: 'user' | 'agent', text: string, time: string }[]>>({
+    chronos: [
+      { sender: 'agent', text: 'Hello! I am your Chronos Orchestrator copilot. I can parse commands to schedule your day, break down tasks, clear events, or answer general productivity queries.', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ],
+    academic: [
+      { sender: 'agent', text: 'Hi there! I am your Academic Study Coach. Ready to conquer your courses, map out grades, or study for exams? Ask me anything!', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ],
+    motivator: [
+      { sender: 'agent', text: "Let's go! No excuses. I am here to push you past procrastination. Tell me what task you are avoiding right now!", time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ]
+  });
+
+  // AIAgent Creator Modal states
+  const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentTone, setNewAgentTone] = useState('Friendly & Supportive');
+  const [newAgentPrompt, setNewAgentPrompt] = useState('');
+  const [newAgentIcon, setNewAgentIcon] = useState('Bot');
+  const [newAgentColor, setNewAgentColor] = useState('blue');
   
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [isTimezoneDialogOpen, setIsTimezoneDialogOpen] = useState(false);
@@ -1470,113 +1539,263 @@ export default function App() {
       </div>
     ) as any;
 
+  const renderAgentIcon = (iconName: string, className?: string) => {
+    switch (iconName) {
+      case 'Sparkles': return <Sparkles className={className} size={18} />;
+      case 'BookOpen': return <BookOpen className={className} size={18} />;
+      case 'Flame': return <Flame className={className} size={18} />;
+      case 'Brain': return <Brain className={className} size={18} />;
+      case 'Bot': return <Bot className={className} size={18} />;
+      case 'Smile': return <Smile className={className} size={18} />;
+      case 'Target': return <Target className={className} size={18} />;
+      default: return <Bot className={className} size={18} />;
+    }
+  };
+
+  const getAgentColorClasses = (color: string) => {
+    switch (color) {
+      case 'purple': return { bg: 'bg-purple-50 text-purple-600', hover: 'hover:border-purple-600', border: 'border-purple-200', activeBg: 'bg-purple-600 text-white', badge: 'bg-purple-100 text-purple-800', chatBg: 'bg-purple-50/50 text-[#1A1A1A] border-purple-100' };
+      case 'amber': return { bg: 'bg-amber-50 text-amber-600', hover: 'hover:border-amber-600', border: 'border-amber-200', activeBg: 'bg-amber-600 text-white', badge: 'bg-amber-100 text-amber-800', chatBg: 'bg-amber-50/50 text-[#1A1A1A] border-amber-100' };
+      case 'rose': return { bg: 'bg-rose-50 text-rose-600', hover: 'hover:border-rose-600', border: 'border-rose-200', activeBg: 'bg-rose-600 text-white', badge: 'bg-rose-100 text-rose-800', chatBg: 'bg-rose-50/50 text-[#1A1A1A] border-rose-100' };
+      case 'emerald': return { bg: 'bg-emerald-50 text-emerald-600', hover: 'hover:border-emerald-600', border: 'border-emerald-200', activeBg: 'bg-emerald-600 text-white', badge: 'bg-emerald-100 text-emerald-800', chatBg: 'bg-emerald-50/50 text-[#1A1A1A] border-emerald-100' };
+      case 'blue': return { bg: 'bg-blue-50 text-blue-600', hover: 'hover:border-blue-600', border: 'border-blue-200', activeBg: 'bg-blue-600 text-white', badge: 'bg-blue-100 text-blue-800', chatBg: 'bg-blue-50/50 text-[#1A1A1A] border-blue-100' };
+      case 'indigo': return { bg: 'bg-indigo-50 text-indigo-600', hover: 'hover:border-indigo-600', border: 'border-indigo-200', activeBg: 'bg-indigo-600 text-white', badge: 'bg-indigo-100 text-indigo-800', chatBg: 'bg-indigo-50/50 text-[#1A1A1A] border-indigo-100' };
+      default: return { bg: 'bg-blue-50 text-blue-600', hover: 'hover:border-blue-600', border: 'border-blue-200', activeBg: 'bg-blue-600 text-white', badge: 'bg-blue-100 text-blue-800', chatBg: 'bg-blue-50/50 text-[#1A1A1A] border-blue-100' };
+    }
+  };
+
   const handleAiSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!aiInput.trim()) return;
+    if (!aiInput.trim() || isAiLoading) return;
 
+    const userMsg = aiInput;
+    setAiInput('');
     setIsAiLoading(true);
+
+    const currentTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Append user message to active chat
+    setAgentChats(prev => ({
+      ...prev,
+      [activeAgentId]: [
+        ...(prev[activeAgentId] || []),
+        { sender: 'user', text: userMsg, time: currentTimeStr }
+      ]
+    }));
+
     try {
-      const result = await geminiService.parsePrompt(aiInput, { tasks, schedule, logs });
-      
-      if (result.intent === 'schedule_day' && result.data.events) {
-        result.data.events.forEach((event: any) => {
-          const startTime = new Date(event.startTime);
-          const newItem: ScheduleItem = {
+      if (activeAgentId === 'chronos') {
+        const result = await geminiService.parsePrompt(userMsg, { tasks, schedule, logs });
+        let agentReply = "";
+
+        if (result.intent === 'schedule_day' && result.data.events) {
+          result.data.events.forEach((event: any) => {
+            const startTime = new Date(event.startTime);
+            const newItem: ScheduleItem = {
+              id: crypto.randomUUID(),
+              title: event.title,
+              startTime: event.startTime,
+              endTime: event.endTime || addHours(startTime, 1).toISOString(),
+              type: event.type || 'work',
+              isAIProposed: true
+            };
+            addScheduleItem(newItem);
+
+            // Add 1hr reminder
+            addReminder({
+              id: crypto.randomUUID(),
+              title: `Reminder: ${event.title} starts in 1 hour`,
+              time: subMinutes(startTime, 60).toISOString(),
+              isSent: false
+            });
+
+            // Add 30min reminder
+            addReminder({
+              id: crypto.randomUUID(),
+              title: `Reminder: ${event.title} starts in 30 minutes`,
+              time: subMinutes(startTime, 30).toISOString(),
+              isSent: false
+            });
+          });
+          agentReply = `I have successfully scheduled ${result.data.events.length} events for you and set up 1-hour and 30-minute reminder intervals! Let me know if you need any adjustments.`;
+          toast.success(`Scheduled ${result.data.events.length} events with reminders`);
+        } else if (result.intent === 'task_breakdown') {
+          const newTask: Task = {
             id: crypto.randomUUID(),
-            title: event.title,
-            startTime: event.startTime,
-            endTime: event.endTime || addHours(startTime, 1).toISOString(),
-            type: event.type || 'work',
-            isAIProposed: true
+            title: result.data.title,
+            status: TaskStatus.TODO,
+            priority: 'medium',
+            category: 'other',
+            createdAt: new Date().toISOString(),
+            subSteps: (result.data.subSteps || []).map((s: string) => ({
+              id: crypto.randomUUID(),
+              title: s,
+              isCompleted: false
+            }))
           };
-          addScheduleItem(newItem);
+          addTask(newTask);
+          agentReply = `I've broken down "${result.data.title}" into ${newTask.subSteps.length} actionable sub-steps.\n\n**Suggestion:** ${result.data.suggestion}`;
+          toast.info("Task Breakdown Added!");
+        } else if (result.intent === 'clear_event') {
+          const targetDate = result.data.targetDate;
+          const isWholeDay = result.data.isWholeDay;
+          const startTime = result.data.startTime ? new Date(result.data.startTime) : null;
+          const endTime = result.data.endTime ? new Date(result.data.endTime) : null;
 
-          // Add 1hr reminder
-          addReminder({
-            id: crypto.randomUUID(),
-            title: `Reminder: ${event.title} starts in 1 hour`,
-            time: subMinutes(startTime, 60).toISOString(),
-            isSent: false
-          });
-
-          // Add 30min reminder
-          addReminder({
-            id: crypto.randomUUID(),
-            title: `Reminder: ${event.title} starts in 30 minutes`,
-            time: subMinutes(startTime, 30).toISOString(),
-            isSent: false
-          });
-        });
-        toast.success(`Scheduled ${result.data.events.length} events with reminders`);
-      } else if (result.intent === 'task_breakdown') {
-        const newTask: Task = {
-          id: crypto.randomUUID(),
-          title: result.data.title,
-          status: TaskStatus.TODO,
-          priority: 'medium',
-          category: 'other',
-          createdAt: new Date().toISOString(),
-          subSteps: (result.data.subSteps || []).map((s: string) => ({
-            id: crypto.randomUUID(),
-            title: s,
-            isCompleted: false
-          }))
-        };
-        addTask(newTask);
-        
-        toast.info("Task Breakdown", {
-          description: result.data.suggestion,
-          action: (result.data.questions && result.data.questions.length > 0) ? {
-            label: "View Questions",
-            onClick: () => {
-              result.data.questions?.forEach((q: string) => toast.info(q));
+          const itemsToRemove = schedule.filter(item => {
+            const itemStart = new Date(item.startTime);
+            const itemEnd = new Date(item.endTime);
+            const itemDate = format(itemStart, 'yyyy-MM-dd');
+            
+            if (itemDate !== targetDate) return false;
+            if (isWholeDay) return true;
+            
+            if (startTime && endTime) {
+              return (itemStart < endTime && itemEnd > startTime);
             }
-          } : undefined
-        });
-      } else if (result.intent === 'clear_event') {
-        const targetDate = result.data.targetDate;
-        const isWholeDay = result.data.isWholeDay;
-        const startTime = result.data.startTime ? new Date(result.data.startTime) : null;
-        const endTime = result.data.endTime ? new Date(result.data.endTime) : null;
+            return false;
+          });
 
-        const itemsToRemove = schedule.filter(item => {
-          const itemStart = new Date(item.startTime);
-          const itemEnd = new Date(item.endTime);
-          const itemDate = format(itemStart, 'yyyy-MM-dd');
-          
-          if (itemDate !== targetDate) return false;
-          if (isWholeDay) return true;
-          
-          if (startTime && endTime) {
-            // Check for any overlap between the item and the target period
-            return (itemStart < endTime && itemEnd > startTime);
-          }
-          return false;
-        });
+          itemsToRemove.forEach(item => deleteScheduleItem(item.id));
+          agentReply = `I have cleared ${itemsToRemove.length} events for ${targetDate} matching your request.`;
+          toast.success(`Cleared ${itemsToRemove.length} events for ${targetDate}`);
+        } else if (result.intent === 'analyze_time') {
+          agentReply = `Here is your productivity analysis:\n\n${result.data.analysis}\n\n**Suggestions:**\n${(result.data.suggestions || []).map((s: string) => `• ${s}`).join('\n')}`;
+          toast.info("Analysis Complete!");
+        } else if (result.intent === 'query') {
+          agentReply = result.data.answer;
+        }
 
-        itemsToRemove.forEach(item => deleteScheduleItem(item.id));
-        toast.success(`Cleared ${itemsToRemove.length} events for ${targetDate}`);
-      } else if (result.intent === 'analyze_time') {
-        toast.info("Time Analysis", {
-          description: result.data.analysis,
-          duration: 10000,
-        });
-        result.data.suggestions?.forEach((s: string) => {
-          toast.success("Suggestion", { description: s });
-        });
-      } else if (result.intent === 'query') {
-        toast.info("AI Assistant", {
-          description: result.data.answer,
-        });
+        setAgentChats(prev => ({
+          ...prev,
+          chronos: [
+            ...(prev.chronos || []),
+            { sender: 'agent', text: agentReply || "I processed your request! Let me know if you need anything else.", time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+          ]
+        }));
+
+      } else {
+        // Custom or specialized AI Agent
+        const activeAgent = agents.find(a => a.id === activeAgentId);
+        if (!activeAgent) throw new Error("Active agent not found");
+
+        const history = agentChats[activeAgentId] || [];
+        const replyText = await geminiService.getCustomAgentResponse(
+          activeAgent.name,
+          activeAgent.promptPrefix,
+          activeAgent.tone,
+          userMsg,
+          history,
+          { tasks, schedule, courses, logs }
+        );
+
+        setAgentChats(prev => ({
+          ...prev,
+          [activeAgentId]: [
+            ...(prev[activeAgentId] || []),
+            { sender: 'agent', text: replyText, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+          ]
+        }));
       }
-      
-      setAiInput('');
+
     } catch (error) {
       console.error(error);
       toast.error("Failed to process AI request");
+      setAgentChats(prev => ({
+        ...prev,
+        [activeAgentId]: [
+          ...(prev[activeAgentId] || []),
+          { sender: 'agent', text: "I encountered a minor system sync issue. Please verify your connection and try sending the message again.", time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+        ]
+      }));
     } finally {
       setIsAiLoading(false);
     }
+  };
+
+  const handleSupportChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supportChatInput.trim() || isSupportReplying) return;
+
+    const userMsg = supportChatInput;
+    setSupportChatInput('');
+    
+    const newUserMsgObj = {
+      sender: 'user' as const,
+      text: userMsg,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setSupportChat(prev => [...prev, newUserMsgObj]);
+    setIsSupportReplying(true);
+
+    try {
+      const replyText = await geminiService.getSupportReply(userMsg, supportChat);
+      setSupportChat(prev => [...prev, {
+        sender: 'agent' as const,
+        text: replyText,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
+    } catch (err) {
+      console.error(err);
+      setSupportChat(prev => [...prev, {
+        sender: 'agent' as const,
+        text: "I am experiencing network difficulties. Please verify your internet connection or retry in a moment.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
+    } finally {
+      setIsSupportReplying(false);
+    }
+  };
+
+  const handleTicketSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supportMessage.trim()) {
+      toast.error("Please explain your inquiry before submitting.");
+      return;
+    }
+    toast.success("Inquiry Submitted Successfully!", {
+      description: `Inquiry ticket regarding "${supportCategory.toUpperCase()}" registered under ${supportEmail || 'your username'}. A representative will email you back within 24 hours.`
+    });
+    setSupportMessage('');
+  };
+
+  const handleCreateAgent = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAgentName.trim() || !newAgentPrompt.trim()) {
+      toast.error("Please fill out name and prompt configurations for your AI agent!");
+      return;
+    }
+
+    const newId = crypto.randomUUID();
+    const createdAgent = {
+      id: newId,
+      name: newAgentName,
+      tone: newAgentTone,
+      promptPrefix: newAgentPrompt,
+      iconName: newAgentIcon,
+      color: newAgentColor
+    };
+
+    setAgents(prev => [...prev, createdAgent]);
+    setAgentChats(prev => ({
+      ...prev,
+      [newId]: [
+        { sender: 'agent', text: `Greetings! I am ${newAgentName}. I have been successfully created and fully calibrated to my designated settings. How can I assist you in your workspace today?`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+      ]
+    }));
+
+    setActiveAgentId(newId);
+    setIsAgentModalOpen(false);
+
+    // Reset fields
+    setNewAgentName('');
+    setNewAgentTone('Friendly & Supportive');
+    setNewAgentPrompt('');
+    setNewAgentIcon('Bot');
+    setNewAgentColor('blue');
+
+    toast.success(`${newAgentName} has been initialized successfully!`);
   };
 
   const toggleSubStep = (taskId: string, stepId: string) => {
@@ -2093,18 +2312,24 @@ export default function App() {
                       <h3 className="text-4xl font-bold tracking-tighter">System Console</h3>
                       <p className="text-[#868E96] font-medium mt-1">Configure your Chronos experience</p>
                     </div>
-                    <div className="flex bg-[#F1F3F5] p-1 rounded-[2rem] shadow-inner self-start md:self-center">
+                    <div className="flex bg-[#F1F3F5] p-1 rounded-[2rem] shadow-inner self-start md:self-center overflow-x-auto max-w-full">
                       <button 
                         onClick={() => setSettingsSubTab('profile')}
-                        className={`flex items-center gap-2 px-6 py-2.5 rounded-[1.5rem] text-xs font-bold uppercase tracking-widest transition-all ${settingsSubTab === 'profile' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-[1.5rem] text-xs font-bold uppercase tracking-widest transition-all shrink-0 ${settingsSubTab === 'profile' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
                       >
                         <User size={14} /> Profile
                       </button>
                       <button 
                         onClick={() => setSettingsSubTab('productivity')}
-                        className={`flex items-center gap-2 px-6 py-2.5 rounded-[1.5rem] text-xs font-bold uppercase tracking-widest transition-all ${settingsSubTab === 'productivity' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-[1.5rem] text-xs font-bold uppercase tracking-widest transition-all shrink-0 ${settingsSubTab === 'productivity' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
                       >
                         <Zap size={14} className={settingsSubTab === 'productivity' ? 'text-blue-600' : ''} /> Core Hub
+                      </button>
+                      <button 
+                        onClick={() => setSettingsSubTab('readme')}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-[1.5rem] text-xs font-bold uppercase tracking-widest transition-all shrink-0 ${settingsSubTab === 'readme' ? 'bg-white text-[#1A1A1A] shadow-sm' : 'text-[#868E96] hover:text-[#495057]'}`}
+                      >
+                        <BookOpen size={14} className={settingsSubTab === 'readme' ? 'text-blue-600' : ''} /> Help & README
                       </button>
                     </div>
                   </div>
@@ -2488,6 +2713,235 @@ export default function App() {
                               </div>
                             </div>
                          </Card>
+                      </motion.div>
+                    )}
+                    {settingsSubTab === 'readme' && (
+                      <motion.div
+                        key="readme-tab"
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        className="grid grid-cols-1 md:grid-cols-4 gap-8 text-[#1A1A1A]"
+                      >
+                        {/* Interactive Reader Left Sidebar */}
+                        <div className="md:col-span-1 space-y-4">
+                          <Card className="border-none shadow-sm bg-white rounded-[2rem] p-4 flex flex-col gap-1">
+                            <h4 className="text-[10px] font-black uppercase tracking-widest text-[#868E96] px-3 mb-3">Topic Outline</h4>
+                            {[
+                              { id: 'overview', label: 'Overview', icon: Globe },
+                              { id: 'tasks', label: 'Tasks & Planning', icon: CheckCircle2 },
+                              { id: 'ai', label: 'AI Co-pilot', icon: Zap },
+                              { id: 'grading', label: 'Academic GPA', icon: BookOpen }
+                            ].map((sec) => {
+                              const SecIcon = sec.icon;
+                              return (
+                                <button
+                                  key={sec.id}
+                                  type="button"
+                                  onClick={() => setReadmeSection(sec.id as any)}
+                                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-xs font-bold uppercase tracking-wider transition-all ${
+                                    readmeSection === sec.id
+                                      ? 'bg-[#1A1A1A] text-white shadow-md'
+                                      : 'text-[#868E96] hover:bg-[#F8F9FA] hover:text-[#1A1A1A]'
+                                  }`}
+                                >
+                                  <SecIcon size={14} />
+                                  <span>{sec.label}</span>
+                                </button>
+                              );
+                            })}
+                          </Card>
+
+                          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-[2rem] p-6 border border-[#E9ECEF] text-center space-y-4">
+                            <Clock className="w-8 h-8 text-amber-600 mx-auto" />
+                            <p className="text-xs font-bold text-amber-900 tracking-tight">Need direct technical support?</p>
+                            <Button
+                              variant="outline"
+                              type="button"
+                              onClick={() => setIsSupportDialogOpen(true)}
+                              className="w-full bg-white rounded-xl h-10 text-[9px] font-black uppercase tracking-widest text-amber-800 border-amber-200 hover:bg-amber-100/50"
+                            >
+                              Open Support Kit
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Interactive Reader Right Dynamic Display Panel */}
+                        <div className="md:col-span-3 space-y-6">
+                          <AnimatePresence mode="wait">
+                            {readmeSection === 'overview' && (
+                              <motion.div
+                                key="sec-overview"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="space-y-6"
+                              >
+                                <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 md:p-10 space-y-6">
+                                  <div className="space-y-2">
+                                    <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none font-bold uppercase tracking-widest text-[9px] px-3 py-1 rounded-full">Intelligent Workspaces</Badge>
+                                    <h3 className="text-3xl font-black tracking-tight uppercase">Chronos AI System Manual</h3>
+                                    <p className="text-sm text-[#868E96] leading-relaxed font-semibold">
+                                      Chronos AI matches time tracking, intelligent context evaluation, goal parameters, task structures, simulated professional email clients, and advanced GPA metrics into a beautifully unified grid.
+                                    </p>
+                                  </div>
+
+                                  <hr className="border-[#E9ECEF]" />
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="p-5 bg-[#F8F9FA] rounded-2xl border border-[#E9ECEF] space-y-2">
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Unified Architecture</p>
+                                      <p className="text-xs text-[#868E96] font-semibold">Tracks schedule items and priorities inside standard reactive storage grids for responsive offline states.</p>
+                                    </div>
+                                    <div className="p-5 bg-[#F8F9FA] rounded-2xl border border-[#E9ECEF] space-y-2">
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Interactive Visualizers</p>
+                                      <p className="text-xs text-[#868E96] font-semibold">Rich progress loops, clock grids, and SVG layouts designed for tactile mouse tracking and touch actions.</p>
+                                    </div>
+                                  </div>
+                                </Card>
+                              </motion.div>
+                            )}
+
+                            {readmeSection === 'tasks' && (
+                              <motion.div
+                                key="sec-tasks"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="space-y-6"
+                              >
+                                <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 md:p-10 space-y-6">
+                                  <div className="space-y-2">
+                                    <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 border-none font-bold uppercase tracking-widest text-[9px] px-3 py-1 rounded-full">Tasks & Time-blocking</Badge>
+                                    <h3 className="text-3xl font-black tracking-tight uppercase">Workload & Planning Guides</h3>
+                                    <p className="text-sm text-[#868E96] leading-relaxed font-semibold">
+                                      Divide complex assignments, specify materials lists, configure customized alert windows, and log billing rates per project hourly matrix.
+                                    </p>
+                                  </div>
+
+                                  <hr className="border-[#E9ECEF]" />
+
+                                  <div className="space-y-4">
+                                    <div className="flex items-start gap-4">
+                                      <div className="w-8 h-8 rounded-full bg-orange-100/30 flex items-center justify-center shrink-0 mt-0.5">
+                                        <span className="text-xs font-black text-orange-600">01</span>
+                                      </div>
+                                      <div>
+                                        <p className="font-bold text-sm text-[#1A1A1A]">Breakdowns</p>
+                                        <p className="text-xs text-[#868E96] mt-1 font-semibold">Break parent items down into hierarchical lists. Work item trackers calculate progress dynamically.</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-start gap-4">
+                                      <div className="w-8 h-8 rounded-full bg-orange-100/30 flex items-center justify-center shrink-0 mt-0.5">
+                                        <span className="text-xs font-black text-orange-600">02</span>
+                                      </div>
+                                      <div>
+                                        <p className="font-bold text-sm text-[#1A1A1A]">Activity Logs & Time Blocks</p>
+                                        <p className="text-xs text-[#868E96] mt-1 font-semibold">Combine schedules in Month and Day grids. Flag online hybrid events with automatic target routes.</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </Card>
+                              </motion.div>
+                            )}
+
+                            {readmeSection === 'ai' && (
+                              <motion.div
+                                key="sec-ai"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="space-y-6"
+                              >
+                                <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 md:p-10 space-y-6">
+                                  <div className="space-y-2">
+                                    <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100 border-none font-bold uppercase tracking-widest text-[9px] px-3 py-1 rounded-full">Gemini intelligence</Badge>
+                                    <h3 className="text-3xl font-black tracking-tight uppercase">AI Co-pilot & Multi-Agent Engine</h3>
+                                    <p className="text-sm text-[#868E96] leading-relaxed font-semibold">
+                                      Integrate the secure server-side Gemini models directly with customized specialized co-pilots or deploy your own custom bots.
+                                    </p>
+                                  </div>
+
+                                  <hr className="border-[#E9ECEF]" />
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="p-5 bg-[#F8F9FA] rounded-[1.5rem] border border-[#E9ECEF] space-y-2">
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-purple-700">Multi-Agent Suite</p>
+                                      <p className="text-xs text-[#868E96] font-semibold">Switch instantly between specialized co-pilots like Chronos Orchestrator, Academic Coach, or Focus Companion.</p>
+                                    </div>
+                                    <div className="p-5 bg-[#F8F9FA] rounded-[1.5rem] border border-[#E9ECEF] space-y-2">
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-purple-700">Deploy Custom Bots</p>
+                                      <p className="text-xs text-[#868E96] font-semibold">Deploy custom agents on the fly! Name them, set their specific instructions, tone of voice, color scheme, and icons.</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="p-6 bg-[#F8F9FA] rounded-[2rem] border border-[#E9ECEF] space-y-4">
+                                    <p className="font-bold text-xs uppercase tracking-widest text-purple-700">Supported Prompt Commands (Chronos Orchestrator)</p>
+                                    <ul className="space-y-2 text-xs text-[#495057] font-semibold">
+                                      <li className="flex items-start gap-2">
+                                        <span className="text-purple-600 font-extrabold">•</span>
+                                        <span><strong>"Schedule My Day":</strong> Populates detailed time blockings incorporating break segments automatically.</span>
+                                      </li>
+                                      <li className="flex items-start gap-2">
+                                        <span className="text-purple-600 font-extrabold">•</span>
+                                        <span><strong>"Break down [Task name]":</strong> Inspects workspace and partitions task into structured arrays of deliverables.</span>
+                                      </li>
+                                      <li className="flex items-start gap-2">
+                                        <span className="text-purple-600 font-extrabold">•</span>
+                                        <span><strong>"Clear an Event":</strong> Target timeline spans and remove specific schedule blockers.</span>
+                                      </li>
+                                      <li className="flex items-start gap-2">
+                                        <span className="text-purple-600 font-extrabold">•</span>
+                                        <span><strong>"Analyze My Time":</strong> Generates comprehensive, high-level productivity intelligence files.</span>
+                                      </li>
+                                    </ul>
+                                  </div>
+                                </Card>
+                              </motion.div>
+                            )}
+
+                            {readmeSection === 'grading' && (
+                              <motion.div
+                                key="sec-grading"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="space-y-6"
+                              >
+                                <Card className="border-none shadow-sm bg-white rounded-[2.5rem] p-8 md:p-10 space-y-6">
+                                  <div className="space-y-2">
+                                    <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none font-bold uppercase tracking-widest text-[9px] px-3 py-1 rounded-full">Academic Hub</Badge>
+                                    <h3 className="text-3xl font-black tracking-tight uppercase">Academic Curriculum & GPA Engine</h3>
+                                    <p className="text-sm text-[#868E96] leading-relaxed font-semibold">
+                                      We have refined the subject editor into an intuitive three-step wizard. Choose your configurations seamlessly:
+                                    </p>
+                                  </div>
+
+                                  <hr className="border-[#E9ECEF]" />
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div className="p-4 bg-[#F8F9FA] rounded-2xl space-y-1">
+                                      <p className="text-[10px] font-black text-emerald-600">STEPS 1 & 2</p>
+                                      <p className="font-bold text-xs">Term Lifecycle & Boundaries</p>
+                                      <p className="text-[10px] text-[#868E96] font-semibold">Set start and end boundaries, and toggle drafting lock controls.</p>
+                                    </div>
+                                    <div className="p-4 bg-[#F8F9FA] rounded-2xl space-y-1">
+                                      <p className="text-[10px] font-black text-emerald-600">STEP 3</p>
+                                      <p className="font-bold text-xs">Weighting Sliders</p>
+                                      <p className="text-[10px] text-[#868E96] font-semibold">Direct weights with high-contrast input range sliders.</p>
+                                    </div>
+                                    <div className="p-4 bg-[#F8F9FA] rounded-2xl space-y-1">
+                                      <p className="text-[10px] font-black text-emerald-600">GRADES</p>
+                                      <p className="font-bold text-xs">Dual Formats</p>
+                                      <p className="text-[10px] text-[#868E96] font-semibold">Widen values (A to F scale, or 100 to 0 numerical offsets seamlessly).</p>
+                                    </div>
+                                  </div>
+                                </Card>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -4603,68 +5057,342 @@ export default function App() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="max-w-3xl mx-auto space-y-8"
+                    className="max-w-4xl mx-auto space-y-8"
                   >
-                  <div className="text-center space-y-4 mb-12">
-                    <div className="w-20 h-20 bg-[#1A1A1A] rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl shadow-black/20">
-                      <Zap className="text-white w-10 h-10" />
-                    </div>
-                    <h3 className="text-4xl font-bold tracking-tighter">How can I help you today?</h3>
-                    <p className="text-[#868E96] text-lg font-medium">I can manage your entire workflow through simple commands.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                    {[
-                      { title: "Schedule My Day", desc: "Auto-schedule with 1hr & 30min reminders", icon: Calendar },
-                      { title: "Break down a task", desc: "Step-by-step process with material check", icon: Target },
-                      { title: "Clear an Event", desc: "Erase specific times or whole day events", icon: Trash2 },
-                      { title: "Analyze My Time", desc: "Productivity insights and helpful guides", icon: Timer },
-                    ].map((item, i) => (
-                      <button 
-                        key={i}
-                        onClick={() => setAiInput(item.title)}
-                        className="p-6 bg-white rounded-[2rem] border border-[#E9ECEF] text-left hover:border-[#1A1A1A] hover:shadow-xl hover:-translate-y-1 transition-all group"
-                      >
-                        <div className="p-3 bg-[#F8F9FA] rounded-xl w-fit mb-4 group-hover:bg-[#1A1A1A] group-hover:text-white transition-colors">
-                          <item.icon size={20} />
-                        </div>
-                        <h4 className="font-bold text-lg mb-1">{item.title}</h4>
-                        <p className="text-sm text-[#868E96]">{item.desc}</p>
-                      </button>
-                    ))}
-                  </div>
-
-                  <Card className="border-none shadow-2xl bg-white rounded-[3rem] overflow-hidden p-2">
-                    <form onSubmit={handleAiSubmit} className="flex items-center gap-4 p-4">
-                      <div className="flex-1 relative">
-                        <Input 
-                          placeholder="Type your command here..." 
-                          className="border-none bg-[#F8F9FA] rounded-[2rem] h-16 px-8 text-lg focus-visible:ring-0 placeholder:text-[#ADB5BD]"
-                          value={aiInput}
-                          onChange={(e) => setAiInput(e.target.value)}
-                          disabled={isAiLoading}
-                        />
-                        {isAiLoading && (
-                          <div className="absolute right-6 top-5">
-                            <motion.div 
-                              animate={{ rotate: 360 }}
-                              transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                            >
-                              <Timer size={24} className="text-[#CED4DA]" />
-                            </motion.div>
-                          </div>
-                        )}
+                    {/* Header */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                      <div>
+                        <h3 className="text-3xl font-extrabold tracking-tight">AI Co-Pilots & Agents</h3>
+                        <p className="text-sm text-[#868E96]">Deploy, configure, and chat with specialized workspace intelligences.</p>
                       </div>
-                      <Button 
-                        type="submit" 
-                        disabled={isAiLoading}
-                        className="w-16 h-16 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center hover:scale-105 transition-transform shrink-0 shadow-xl shadow-black/20"
+                      <Button
+                        onClick={() => setIsAgentModalOpen(true)}
+                        className="bg-black text-white hover:bg-black/90 rounded-2xl flex items-center gap-2 px-5 py-3 font-bold"
                       >
-                        <ChevronRight size={28} />
+                        <Plus size={18} />
+                        Deploy New Agent
                       </Button>
-                    </form>
-                  </Card>
-                </motion.div>
+                    </div>
+
+                    {/* Agent Horizontal Selector Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      {agents.map((agent) => {
+                        const colors = getAgentColorClasses(agent.color);
+                        const isActive = activeAgentId === agent.id;
+                        return (
+                          <button
+                            key={agent.id}
+                            onClick={() => setActiveAgentId(agent.id)}
+                            className={`p-5 rounded-[2rem] border text-left transition-all relative ${
+                              isActive
+                                ? `bg-white ${colors.border} shadow-xl ring-2 ring-black/5`
+                                : 'bg-[#F8F9FA]/60 border-[#E9ECEF] hover:bg-white hover:shadow-lg'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between mb-3">
+                              <div className={`p-3 rounded-2xl ${colors.bg}`}>
+                                {renderAgentIcon(agent.iconName)}
+                              </div>
+                              {agent.isSystem ? (
+                                <Badge className="bg-gray-100 text-gray-700 border-none text-[9px] px-2 py-0.5">
+                                  System
+                                </Badge>
+                              ) : (
+                                <Badge className={`${colors.bg} border-none text-[9px] px-2 py-0.5`}>
+                                  Custom
+                                </Badge>
+                              )}
+                            </div>
+                            <h4 className="font-bold text-sm tracking-tight truncate">{agent.name}</h4>
+                            <p className="text-[11px] text-[#868E96] truncate">{agent.tone}</p>
+
+                            {isActive && (
+                              <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-black" />
+                            )}
+                          </button>
+                        );
+                      })}
+
+                      {/* Quick Add Card */}
+                      <button
+                        onClick={() => setIsAgentModalOpen(true)}
+                        className="p-5 rounded-[2rem] border border-dashed border-gray-300 bg-transparent flex flex-col items-center justify-center text-center gap-2 hover:border-black hover:bg-white hover:shadow-lg transition-all min-h-[120px]"
+                      >
+                        <div className="p-2.5 bg-gray-50 text-gray-400 rounded-xl">
+                          <Plus size={20} />
+                        </div>
+                        <span className="font-bold text-xs text-gray-700">Deploy custom bot...</span>
+                      </button>
+                    </div>
+
+                    {/* Selected Agent View Context */}
+                    {(() => {
+                      const currentAgent = agents.find(a => a.id === activeAgentId) || agents[0];
+                      const colors = getAgentColorClasses(currentAgent.color);
+                      const currentChat = agentChats[currentAgent.id] || [];
+
+                      return (
+                        <div className="space-y-6">
+                          {/* Active Agent Info Bar */}
+                          <div className={`p-5 rounded-[2.5rem] border ${colors.border} bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm`}>
+                            <div className="flex items-center gap-4">
+                              <div className={`p-4 rounded-[1.5rem] ${colors.bg}`}>
+                                {renderAgentIcon(currentAgent.iconName, "w-6 h-6")}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-bold text-lg">{currentAgent.name}</h4>
+                                  <Badge className={`${colors.bg} border-none text-[10px]`}>
+                                    {currentAgent.tone}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-[#868E96] mt-0.5 max-w-xl truncate">
+                                  {currentAgent.promptPrefix}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Chat Messages Log Frame */}
+                          <Card className="border border-gray-100 shadow-xl bg-white rounded-[2.5rem] overflow-hidden p-6 flex flex-col">
+                            <div className="overflow-y-auto space-y-4 pr-1 min-h-[350px] max-h-[420px] flex flex-col">
+                              {currentChat.map((msg, index) => {
+                                const isUser = msg.sender === 'user';
+                                return (
+                                  <div
+                                    key={index}
+                                    className={`flex items-start gap-3 max-w-[85%] ${
+                                      isUser ? 'self-end flex-row-reverse' : 'self-start'
+                                    }`}
+                                  >
+                                    {!isUser && (
+                                      <div className={`p-2.5 rounded-xl ${colors.bg} shrink-0`}>
+                                        {renderAgentIcon(currentAgent.iconName, "w-4 h-4")}
+                                      </div>
+                                    )}
+                                    <div className="space-y-1">
+                                      <div
+                                        className={`p-4 rounded-3xl text-sm leading-relaxed whitespace-pre-wrap ${
+                                          isUser
+                                            ? 'bg-black text-white rounded-tr-none'
+                                            : `${colors.chatBg} rounded-tl-none border`
+                                        }`}
+                                      >
+                                        {msg.text}
+                                      </div>
+                                      <p className={`text-[10px] text-[#868E96] px-2 ${isUser ? 'text-right' : 'text-left'}`}>
+                                        {msg.time}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              {isAiLoading && (
+                                <div className="flex items-start gap-3 self-start">
+                                  <div className={`p-2.5 rounded-xl ${colors.bg} shrink-0 animate-pulse`}>
+                                    {renderAgentIcon(currentAgent.iconName, "w-4 h-4")}
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className={`p-4 rounded-3xl ${colors.chatBg} rounded-tl-none border text-sm flex items-center gap-2`}>
+                                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Divider */}
+                            <div className="h-px bg-gray-100 my-6" />
+
+                            {/* Quick Suggestion Chips */}
+                            <div className="mb-4">
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">
+                                Recommended Commands & Queries
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {(currentAgent.id === 'chronos'
+                                  ? [
+                                      "Schedule My Day",
+                                      "Break down a task",
+                                      "Clear an Event",
+                                      "Analyze My Time"
+                                    ]
+                                  : currentAgent.id === 'academic'
+                                  ? [
+                                      "Explain GPA weight systems",
+                                      "Give study tips for exams",
+                                      "Split a 3-hour study block for Math",
+                                      "Analyze task difficulty vs study load"
+                                    ]
+                                  : currentAgent.id === 'motivator'
+                                  ? [
+                                      "Push me to start writing papers!",
+                                      "How do I enter a deep Pomodoro state?",
+                                      "Give me grit advice",
+                                      "Structure a study marathon"
+                                    ]
+                                  : [
+                                      `How can you help me, ${currentAgent.name}?`,
+                                      "Draft a workspace strategy",
+                                      "Analyze current course workloads",
+                                      "Draft study schedule"
+                                    ]
+                                ).map((suggestionText, idx) => (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => setAiInput(suggestionText)}
+                                    className="px-3.5 py-2 bg-gray-50 text-gray-700 hover:bg-black hover:text-white rounded-xl text-xs font-semibold border border-gray-100 transition-all"
+                                  >
+                                    {suggestionText}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Chat Console Input form */}
+                            <form onSubmit={handleAiSubmit} className="flex items-center gap-3">
+                              <div className="flex-1 relative">
+                                <Input
+                                  placeholder={`Send a message to ${currentAgent.name}...`}
+                                  className="border-none bg-[#F8F9FA] rounded-[2rem] h-14 px-6 text-sm focus-visible:ring-0 placeholder:text-[#ADB5BD]"
+                                  value={aiInput}
+                                  onChange={(e) => setAiInput(e.target.value)}
+                                  disabled={isAiLoading}
+                                />
+                                {isAiLoading && (
+                                  <div className="absolute right-5 top-4">
+                                    <motion.div
+                                      animate={{ rotate: 360 }}
+                                      transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                                    >
+                                      <Timer size={20} className="text-[#CED4DA]" />
+                                    </motion.div>
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                type="submit"
+                                disabled={isAiLoading || !aiInput.trim()}
+                                className="w-14 h-14 bg-[#1A1A1A] hover:bg-black text-white rounded-full flex items-center justify-center hover:scale-105 transition-transform shrink-0 shadow-lg shadow-black/10"
+                              >
+                                <ChevronRight size={22} />
+                              </Button>
+                            </form>
+                          </Card>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Agent Creator Dialog Modal */}
+                    <Dialog open={isAgentModalOpen} onOpenChange={setIsAgentModalOpen}>
+                      <DialogContent className="sm:max-w-[550px] rounded-[2.5rem] p-8 border-none shadow-2xl bg-white">
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl font-black tracking-tight">Deploy Custom Workspace Bot</DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={handleCreateAgent} className="space-y-6 mt-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Agent Name</label>
+                            <Input
+                              placeholder="e.g. Creative Writing Guru"
+                              value={newAgentName}
+                              onChange={(e) => setNewAgentName(e.target.value)}
+                              className="rounded-xl border-gray-200 h-11"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Tone & Personality</label>
+                            <Input
+                              placeholder="e.g. Poetic, encouraging & structured"
+                              value={newAgentTone}
+                              onChange={(e) => setNewAgentTone(e.target.value)}
+                              className="rounded-xl border-gray-200 h-11"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Instructions / Prompt Prefix</label>
+                            <textarea
+                              placeholder="Define their purpose: e.g. You are a professional creative editor. Advise the user on pacing draft targets, writing blocks, and book layouts."
+                              value={newAgentPrompt}
+                              onChange={(e) => setNewAgentPrompt(e.target.value)}
+                              className="w-full min-h-[100px] p-4 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
+                              required
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            {/* Icon Selection */}
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Icon</label>
+                              <div className="grid grid-cols-4 gap-2 border border-gray-100 p-2.5 rounded-xl bg-[#F8F9FA]">
+                                {['Brain', 'Bot', 'Sparkles', 'Flame', 'Smile', 'Target', 'BookOpen'].map((iconKey) => {
+                                  const isSelected = newAgentIcon === iconKey;
+                                  return (
+                                    <button
+                                      key={iconKey}
+                                      type="button"
+                                      onClick={() => setNewAgentIcon(iconKey)}
+                                      className={`p-2 rounded-lg flex items-center justify-center transition-colors ${
+                                        isSelected ? 'bg-black text-white' : 'bg-white hover:bg-gray-100 text-gray-600 border border-gray-100'
+                                      }`}
+                                    >
+                                      {renderAgentIcon(iconKey)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Color Theme Selection */}
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold uppercase tracking-wider text-gray-500">Color Palette</label>
+                              <div className="grid grid-cols-3 gap-2 border border-gray-100 p-2.5 rounded-xl bg-[#F8F9FA]">
+                                {['purple', 'amber', 'rose', 'emerald', 'blue', 'indigo'].map((colorKey) => {
+                                  const isSelected = newAgentColor === colorKey;
+                                  const colors = getAgentColorClasses(colorKey);
+                                  return (
+                                    <button
+                                      key={colorKey}
+                                      type="button"
+                                      onClick={() => setNewAgentColor(colorKey)}
+                                      className={`p-2 rounded-lg flex items-center justify-center text-[10px] font-bold capitalize transition-colors border ${
+                                        isSelected ? 'bg-black text-white border-black' : `${colors.bg} ${colors.border}`
+                                      }`}
+                                    >
+                                      {colorKey}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+
+                          <DialogFooter className="pt-4 border-t border-gray-100 flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsAgentModalOpen(false)}
+                              className="rounded-xl border-gray-200"
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              type="submit"
+                              className="bg-black hover:bg-black/95 text-white rounded-xl px-6 font-bold"
+                            >
+                              Deploy Agent
+                            </Button>
+                          </DialogFooter>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </motion.div>
                 </PlanGuard>
               )}
 
@@ -6566,6 +7294,185 @@ export default function App() {
               Close Analytics
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 🛠️ Dynamic Interactive Support & Diagnostic Portal */}
+      <Dialog open={isSupportDialogOpen} onOpenChange={setIsSupportDialogOpen}>
+        <DialogContent className="max-w-4xl p-0 overflow-hidden rounded-[2.5rem] bg-[#F8F9FA] border-none text-[#1A1A1A]">
+          <div className="grid grid-cols-1 md:grid-cols-12 h-[80vh] min-h-[500px]">
+            {/* Left Header & Diagnosis Column (4 cols) */}
+            <div className="md:col-span-4 bg-[#1A1A1A] p-8 text-white flex flex-col justify-between">
+              <div className="space-y-6">
+                <div>
+                  <Badge className="bg-amber-500/20 text-amber-300 border-none font-bold uppercase tracking-widest text-[9px] px-3 py-1 rounded-full mb-3">Live Portal</Badge>
+                  <h3 className="text-2xl font-black tracking-tight leading-none uppercase">Technical Support</h3>
+                  <p className="text-[#ADB5BD] text-xs font-medium mt-2 leading-relaxed">Direct diagnostic analysis and interactive system assistance.</p>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#868E96]">Device Diagnostics</p>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between text-xs border-b border-[#2D2D2D] pb-1.5">
+                      <span className="text-[#868E96]">Local Time</span>
+                      <span className="font-semibold text-gray-200">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs border-b border-[#2D2D2D] pb-1.5">
+                      <span className="text-[#868E96]">Timezone</span>
+                      <span className="font-semibold text-gray-200 truncate max-w-[120px]" title={Intl.DateTimeFormat().resolvedOptions().timeZone}>
+                        {Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs border-b border-[#2D2D2D] pb-1.5">
+                      <span className="text-[#868E96]">Active Courses</span>
+                      <span className="font-semibold text-gray-200">{courses.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs border-b border-[#2D2D2D] pb-1.5">
+                      <span className="text-[#868E96]">Active Logs</span>
+                      <span className="font-semibold text-gray-200">{logs.length}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/10 text-[10px] text-gray-400">
+                <span className="font-bold text-gray-200 block mb-1">💡 Pro-Tip</span>
+                You can ask questions about how the GPA calculations parse standard alphabetical values versus numerical thresholds inside the specialist chatbot.
+              </div>
+            </div>
+
+            {/* Right Work Tabs Panel (8 cols) */}
+            <div className="md:col-span-8 flex flex-col h-full overflow-hidden bg-white">
+              <Tabs defaultValue="chat" className="flex flex-col flex-grow overflow-hidden">
+                <div className="border-b border-[#E9ECEF] px-8 py-4 flex items-center justify-between">
+                  <TabsList className="bg-[#F1F3F5] rounded-xl p-1">
+                    <TabsTrigger value="chat" className="rounded-lg text-[10px] font-bold uppercase tracking-widest px-4 py-2">Support Chat</TabsTrigger>
+                    <TabsTrigger value="ticket" className="rounded-lg text-[10px] font-bold uppercase tracking-widest px-4 py-2">Submit Ticket</TabsTrigger>
+                  </TabsList>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    type="button"
+                    className="rounded-full w-8 h-8 p-0"
+                    onClick={() => setIsSupportDialogOpen(false)}
+                  >
+                    <X size={16} />
+                  </Button>
+                </div>
+
+                {/* Tab 1: AI Specialist Live chat */}
+                <TabsContent value="chat" className="flex-grow flex flex-col overflow-hidden p-0 m-0">
+                  <div className="flex-grow overflow-y-auto p-8 space-y-4 bg-gray-50/50 max-h-[350px]">
+                    {supportChat.map((msg, i) => (
+                      <div 
+                        key={i} 
+                        className={`flex flex-col max-w-[85%] ${msg.sender === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'}`}
+                      >
+                        <div className={`p-4 rounded-2xl text-xs font-semibold leading-relaxed ${
+                          msg.sender === 'user' 
+                            ? 'bg-[#1A1A1A] text-white rounded-tr-none' 
+                            : 'bg-white border border-[#E9ECEF] text-[#495057] rounded-tl-none shadow-sm'
+                        }`}>
+                          <p className="whitespace-pre-wrap">{msg.text}</p>
+                        </div>
+                        <span className="text-[9px] text-[#A0AEC0] font-bold mt-1 uppercase tracking-widest">{msg.time}</span>
+                      </div>
+                    ))}
+                    {isSupportReplying && (
+                      <div className="flex items-center gap-2 text-xs font-bold text-blue-600 mr-auto p-4 bg-white border border-[#E9ECEF] rounded-2xl rounded-tl-none shadow-sm">
+                        <span className="animate-pulse">●</span> Specialist is writing...
+                      </div>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSupportChatSubmit} className="border-t border-[#E9ECEF] p-4 bg-white flex gap-3">
+                    <Input 
+                      placeholder="Ask the specialist about custom GPA weights..." 
+                      value={supportChatInput}
+                      onChange={(e) => setSupportChatInput(e.target.value)}
+                      disabled={isSupportReplying}
+                      className="rounded-xl h-11 border-[#E9ECEF] text-xs font-medium focus:ring-0"
+                    />
+                    <Button 
+                      type="submit" 
+                      disabled={isSupportReplying || !supportChatInput.trim()}
+                      className="rounded-xl bg-[#1A1A1A] text-white px-6 font-bold text-xs"
+                    >
+                      Send
+                    </Button>
+                  </form>
+                </TabsContent>
+
+                {/* Tab 2: Ticket Desk */}
+                <TabsContent value="ticket" className="flex-grow overflow-y-auto p-8 space-y-6">
+                  <form onSubmit={handleTicketSubmit} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-[#868E96]">Inquiry Category</Label>
+                        <Select 
+                          value={supportCategory} 
+                          onValueChange={(val: any) => setSupportCategory(val)}
+                        >
+                          <SelectTrigger className="rounded-xl border-[#E9ECEF] h-11 text-xs font-medium">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent className="border-[#E9ECEF] rounded-xl text-xs">
+                            <SelectItem value="technical">Technical Support</SelectItem>
+                            <SelectItem value="academic">Academic / GPA Setup</SelectItem>
+                            <SelectItem value="ai">AI Model Guidance</SelectItem>
+                            <SelectItem value="billing">Billing / Account Tiers</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-[#868E96]">Contact Email</Label>
+                        <Input 
+                          type="email"
+                          placeholder="your-email@gmail.com"
+                          value={supportEmail}
+                          onChange={(e) => setSupportEmail(e.target.value)}
+                          className="rounded-xl border-[#E9ECEF] h-11 text-xs font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-[#868E96]">Describe Your Inquiry</Label>
+                      <Textarea 
+                        placeholder="Detail your request, current behaviors, or questions..."
+                        value={supportMessage}
+                        onChange={(e) => setSupportMessage(e.target.value)}
+                        className="rounded-xl border-[#E9ECEF] min-h-[120px] text-xs font-semibold p-4"
+                      />
+                    </div>
+
+                    <Button 
+                      type="submit"
+                      className="w-full h-11 rounded-xl bg-[#1A1A1A] text-white font-black uppercase tracking-widest text-xs shadow-lg shadow-black/10"
+                    >
+                      File Diagnostic Inquiry
+                    </Button>
+                  </form>
+
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[#868E96]">Standard Help Articles</p>
+                    <div className="divide-y divide-[#F1F3F5]">
+                      {[
+                        { q: "How is the Academic GPA evaluated?", a: "Chronos supports numerical 100-0 maps as well as standard alphabetical A-F models. Weights for all materials (homeworks, quizzes) must match up to 100% total coverage." },
+                        { q: "How can I check system connection?", a: "Under Settings > Core Hub, analyze active timezone bounds or system limits matching your selected billing profile tiers." }
+                      ].map((item, i) => (
+                        <div key={i} className="py-3 text-xs leading-relaxed">
+                          <p className="font-bold text-[#1A1A1A] mb-1">Q: {item.q}</p>
+                          <p className="text-[#868E96] font-medium">{item.a}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -17,6 +17,45 @@ const oauth2Client = new google.auth.OAuth2(
 
 async function startServer() {
   // API Routes
+  app.get("/api/info", (req, res) => {
+    res.json({
+      application: "Chronos AI Suite",
+      description: "An advanced, comprehensive time-management, calendar scheduler, academic coaching hub, and multi-agent AI workspace designed for high-achieving student productivity.",
+      version: "1.0.0",
+      architecture: "Full-Stack (Vite SPA Client + Node/Express Backend on Cloud Run Container)",
+      coreCapabilities: [
+        {
+          feature: "Academic Hub",
+          description: "Tracks course progression, calculates dynamic GPA scales (using A-F criteria or 100-0 penalty systems), and handles precise grade weight sliders for quizzes, exams, and homework."
+        },
+        {
+          feature: "Smart Task Breakdown",
+          description: "Allows complex assignments to be broken down into actionable sub-steps with integrated reminders, estimation periods, and materials manifests."
+        },
+        {
+          feature: "Dynamic Calendar Schedule",
+          description: "Supports Month/Day interactive grid views, hybrid/online event definitions, and automated timezone shifting capabilities."
+        },
+        {
+          feature: "AI Multi-Agent Portal",
+          description: "Deploy, select, and customize multiple AI co-pilots such as the default Chronos Orchestrator, Academic Study Coach, and Focus & Grit Companion, or deploy custom specialist bots on the fly."
+        },
+        {
+          feature: "Integrated Mail Workspace",
+          description: "Syncs Google Workspace Gmail securely using OAuth 2.0 to view, read, and manage workspace inbox items directly in the app."
+        }
+      ],
+      systemRequirements: {
+        node: ">=18.x",
+        dependencies: ["Express", "Vite", "@google/genai", "Google APIs SDK", "React", "Tailwind CSS", "Motion", "Lucide React"]
+      },
+      supportPortal: {
+        chatbot: "Specialist Diagnostics",
+        ticketSystem: "Direct Ticket Queue (categories: Technical, Academic, AI, Billing)"
+      }
+    });
+  });
+
   app.get("/api/auth/google/url", (req, res) => {
     const scopes = [
       "https://www.googleapis.com/auth/gmail.readonly",
